@@ -143,6 +143,26 @@ nav{z-index:20}
 .pickline b{font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .near-btn{width:100%}
 .dist{flex:0 0 auto;font-size:13px;color:var(--muted);font-variant-numeric:tabular-nums}
+/* 即時與表定：即時預估在右上角加訊號圖示；表定（還沒發車、照時刻表推算）用虛線框，字樣寫「表定」 */
+.eta{position:relative}
+.eta .live{position:absolute;top:3px;right:4px;width:11px;height:11px;opacity:.85}
+.eta.sched{background:transparent;border:1.5px dashed var(--line);color:var(--ink)}
+.eta.sched small{color:var(--muted)}
+.pickline .pill.sched{background:transparent;border:1.5px dashed var(--line)}
+/* 常用分組 */
+.homebar{display:flex;align-items:center;gap:8px}
+.homebar .seg{flex:1}
+.edit-btn{flex:0 0 auto;min-height:48px;padding:0 14px;border-radius:12px;border:1px solid var(--line);background:var(--surface);font-size:14px;font-weight:500}
+.edit-btn[aria-pressed="true"]{background:var(--accent);color:var(--accent-ink);border-color:var(--accent);font-weight:700}
+/* 編輯列：名稱獨佔一行，分組按鈕與移除鍵放在下一行，窄螢幕也不會把名稱擠成好幾行 */
+.erow{display:flex;flex-wrap:wrap;align-items:center;gap:8px;padding:10px 12px;border-top:1px solid var(--line)}
+.erow:first-child{border-top:0}
+.erow .body{flex:1 1 100%;min-width:0}
+.gpick{display:flex;gap:4px;flex:1}
+.gpick button{flex:1;min-height:44px;min-width:44px;padding:0 8px;border-radius:10px;border:1px solid var(--line);font-size:13px;color:var(--muted)}
+.gpick button[aria-pressed="true"]{background:var(--accent);border-color:var(--accent);color:var(--accent-ink);font-weight:700}
+.rm{flex:0 0 44px;height:44px;border-radius:10px;color:var(--now);font-size:20px}
+.hint{font-size:13px;color:var(--muted)}
 @media (min-width:1024px){
   nav{left:16px;right:auto;top:16px;bottom:auto;width:408px;border:1px solid var(--line);border-radius:14px;padding:0;overflow:hidden}
   nav button{min-height:44px}
@@ -190,7 +210,7 @@ let favs=store.get("bus_favs",[]);
 const isDemo=()=>!cred;
 
 /* ---------- 狀態 ---------- */
-const S={view:"home",q:"",results:null,route:null,dir:0,stopName:null,stopPos:[],pick:null,shape:null,sheet:"half",
+const S={view:"home",q:"",results:null,route:null,dir:0,stopName:null,stopPos:[],pick:null,shape:null,sheet:"half",homeTab:null,editFav:false,
   home:{},stops:null,eta:{},near:{},board:null,err:"",busy:false,updated:null,left:REFRESH,msg:""};
 const stopPosByName={};   // 搜尋結果帶回的站牌座標：站名 -> [[lat,lon],...]
 const pos=p=>p&&p.PositionLat&&p.PositionLon?[+p.PositionLat.toFixed(5),+p.PositionLon.toFixed(5)]:null;
@@ -280,13 +300,16 @@ function errText(e){
 }
 
 /* ---------- 到站時間格式 ---------- */
+/* TDX 的 StopStatus：0 表示車已發車、EstimateTime 是即時預估；1 表示尚未發車，此時若有 EstimateTime，是照時刻表推算的。
+   兩者可靠程度不同，畫面上分開標示：即時加訊號圖示，表定用虛線框並寫「表定」。 */
 function fmt(e){
   if(!e)return {cls:"off",text:"無資料"};
   const s=e.StopStatus,t=e.EstimateTime;
-  if(t!=null&&t>=0&&(s==null||s===0||s===1)){
-    if(t<=60)return {cls:"now txt",text:"進站中"};
-    if(t<=180)return {cls:"soon",text:Math.ceil(t/60),sub:"即將到站"};
-    return {cls:"",text:Math.round(t/60),sub:"分"};
+  if(t!=null&&t>=0&&s===1)return {cls:"sched",text:Math.round(t/60),sub:"表定",live:false};
+  if(t!=null&&t>=0&&(s==null||s===0)){
+    if(t<=60)return {cls:"now txt",text:"進站中",live:true};
+    if(t<=180)return {cls:"soon",text:Math.ceil(t/60),sub:"即將到站",live:true};
+    return {cls:"",text:Math.round(t/60),sub:"分",live:true};
   }
   if(s===1){
     if(e.NextBusTime){const d=new Date(e.NextBusTime);if(!isNaN(d))return {cls:"off",text:hm(d)+" 發車"}}
@@ -299,7 +322,11 @@ function fmt(e){
 }
 const p2=n=>String(n).padStart(2,"0");
 const hm=d=>p2(d.getHours())+":"+p2(d.getMinutes());
-const etaBox=e=>{const f=fmt(e);return '<div class="eta '+f.cls+'">'+esc(f.text)+(f.sub?"<small>"+f.sub+"</small>":"")+"</div>"};
+const LIVE_ICON='<svg class="live" viewBox="0 0 12 12" aria-hidden="true"><circle cx="2" cy="10" r="1.6" fill="currentColor"/><path d="M2 6.2a3.8 3.8 0 0 1 3.8 3.8M2 2.4A7.6 7.6 0 0 1 9.6 10" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>';
+const etaLabel=f=>f.live?"即時預估：":f.cls==="sched"?"表定推算：":"";
+const etaBox=e=>{const f=fmt(e);
+  const label=etaLabel(f)+f.text+(f.sub==="分"||f.sub==="表定"?" 分鐘":f.sub?"，"+f.sub:"");
+  return '<div class="eta '+f.cls+'" role="img" aria-label="'+esc(label)+'">'+(f.live?LIVE_ICON:"")+esc(f.text)+(f.sub?"<small>"+f.sub+"</small>":"")+"</div>"};
 const rank=e=>{const t=e&&e.EstimateTime;return (t!=null&&t>=0&&(e.StopStatus==null||e.StopStatus<=1))?t:1e9+((e&&e.StopStatus)||9)};
 function better(a,b){return !a||rank(b)<rank(a)?b:a}
 
@@ -443,6 +470,21 @@ const DEMO_FAVS=[
   {type:"st",name:"捷運西門站",pos:[[25.0421,121.5081]]}
 ];
 const shownFavs=()=>isDemo()&&!favs.length?DEMO_FAVS:favs;
+/* 常用分組：每個收藏可標「上班」或「回家」。打開看板時依時段預設分頁（12 點前上班、16 點後回家），
+   該分組沒有項目就顯示全部。手動切換的分頁在這次開啟期間保留。 */
+const GROUPS=[["work","上班"],["home","回家"]];
+const hasGroups=()=>shownFavs().some(f=>f.group);
+function autoTab(){
+  const h=new Date().getHours(),g=h<12?"work":h>=16?"home":null;
+  return g&&shownFavs().some(f=>f.group===g)?g:"all";
+}
+const homeTab=()=>hasGroups()?(S.homeTab||autoTab()):"all";
+const homeFavs=()=>{const t=homeTab();return t==="all"?shownFavs():shownFavs().filter(f=>f.group===t)};
+function setGroup(id,g){
+  const f=favs.find(x=>favId(x)===id);if(!f)return;
+  if(g)f.group=g;else delete f.group;
+  store.set("bus_favs",favs);
+}
 const isFav=id=>favs.some(f=>favId(f)===id);
 function toggleFav(f){
   const id=favId(f);
@@ -570,7 +612,7 @@ function render(){
     const s=S.stops[S.dir].Stops.find(x=>x.StopUID===S.pick);
     if(s){
       const f=fmt(S.eta[S.dir+"|"+s.StopUID]),cls=f.cls.split(" ")[0];
-      h+='<button class="pickline" data-act="topick" data-uid="'+esc(s.StopUID)+'" aria-label="捲到 '+esc(zh(s.StopName))+'"><span class="pill '+cls+'">'+esc(f.text)+(f.sub==="分"?" 分":"")+'</span><b>'+esc(zh(s.StopName))+'</b></button>';
+      h+='<button class="pickline" data-act="topick" data-uid="'+esc(s.StopUID)+'" aria-label="捲到 '+esc(zh(s.StopName))+'"><span class="pill '+cls+'">'+esc(f.text)+(f.sub==="分"?" 分":f.sub==="表定"?" 分（表定）":"")+'</span><b>'+esc(zh(s.StopName))+'</b></button>';
     }
   }
   if(live())h+='<div class="meta"><span>'+(S.updated?"更新於 "+hm(S.updated)+":"+p2(S.updated.getSeconds()):"載入中")+
@@ -599,10 +641,32 @@ function tags(e,buses){
   if(e&&e.IsLastBus)t+='<span class="tag last">末班車</span>';
   return t?'<div class="tags">'+t+"</div>":"";
 }
+function vHomeEdit(){
+  let h='<div class="homebar"><div class="hint" style="flex:1">替每個常用項目選擇分組。早上會先顯示「上班」，傍晚先顯示「回家」。</div>'+
+    '<button type="button" class="edit-btn" data-act="editfav" aria-pressed="true">完成</button></div><div class="list">';
+  for(const f of favs){
+    const id=favId(f),name=f.type==="rs"?f.route+"　"+f.stopName:f.name+"（站牌看板）";
+    h+='<div class="erow"><div class="body"><b>'+esc(name)+'</b>'+(f.type==="rs"?"<span>往 "+esc(f.toward)+"</span>":"")+'</div>'+
+      '<div class="gpick" role="group" aria-label="'+esc(name)+' 的分組">'+
+      GROUPS.concat([["","不分"]]).map(([g,l])=>'<button type="button" data-act="group" data-id="'+esc(id)+'" data-g="'+g+'" aria-pressed="'+((f.group||"")===g)+'">'+l+"</button>").join("")+
+      '</div><button type="button" class="rm" data-act="unfav" data-id="'+esc(id)+'" aria-label="從常用移除 '+esc(name)+'">✕</button></div>';
+  }
+  return h+"</div>";
+}
 function vHome(){
-  const list=shownFavs(),rs=list.filter(f=>f.type==="rs"),st=list.filter(f=>f.type==="st");
-  if(!list.length)return '<div class="empty">還沒有常用項目。到「搜尋」找路線或站牌，按 ☆ 就會出現在這裡。</div>';
-  let h="";
+  if(S.editFav&&favs.length)return vHomeEdit();
+  const all=shownFavs();
+  if(!all.length)return '<div class="empty">還沒有常用項目。到「搜尋」找路線或站牌，按 ☆ 就會出現在這裡。</div>';
+  const tab=homeTab(),list=homeFavs(),rs=list.filter(f=>f.type==="rs"),st=list.filter(f=>f.type==="st");
+  let h='<div class="homebar">';
+  if(hasGroups()){
+    h+='<div class="seg" role="group" aria-label="常用分組">';
+    for(const [g,l] of GROUPS.concat([["all","全部"]]))
+      h+='<button data-act="hometab" data-t="'+g+'" aria-pressed="'+(tab===g)+'">'+l+"</button>";
+    h+="</div>";
+  }else if(favs.length)h+='<div class="hint" style="flex:1">按「分組」把常用項目分成上班、回家，打開時會依時段先顯示。</div>';
+  if(favs.length)h+='<button type="button" class="edit-btn" data-act="editfav" aria-pressed="false">分組</button>';
+  h+="</div>";
   if(rs.length){
     const sorted=rs.slice().sort((a,b)=>rank(S.home[favId(a)])-rank(S.home[favId(b)]));
     h+='<div class="sec">常用路線與站牌</div><div class="list">';
@@ -699,13 +763,18 @@ document.addEventListener("click",async ev=>{
   else if(a==="back"){if(depth>0)history.back();else go(S.prev||"search")}
   else if(a==="route"){
     const prev=S.view==="route"?S.prev:S.view;
-    go("route",{route:{city:el.dataset.city,name:el.dataset.name},dir:Number(el.dataset.dir||0),stops:null,shape:null,pick:el.dataset.uid||null,scrollPick:el.dataset.uid||null,eta:{},near:{},prev,updated:null});
+    const rk=el.dataset.city+"|"+el.dataset.name;
+    go("route",{route:{city:el.dataset.city,name:el.dataset.name},dir:el.dataset.dir!=null?Number(el.dataset.dir):(store.get("route_dir",{})[rk]||0),stops:null,shape:null,pick:el.dataset.uid||null,scrollPick:el.dataset.uid||null,eta:{},near:{},prev,updated:null});
   }
   else if(a==="stop"){
     const name=el.dataset.name,p=el.dataset.pos?JSON.parse(el.dataset.pos):(stopPosByName[name]||[]);
     go("stop",{stopName:name,stopPos:p,board:null,prev:S.view==="stop"?S.prev:S.view,updated:null});
   }
   else if(a==="pick")pickStop(el.dataset.uid,"list");
+  else if(a==="hometab"){S.homeTab=el.dataset.t;render()}
+  else if(a==="editfav"){S.editFav=!S.editFav;render()}
+  else if(a==="group"){setGroup(el.dataset.id,el.dataset.g);render()}
+  else if(a==="unfav"){favs=favs.filter(x=>favId(x)!==el.dataset.id);store.set("bus_favs",favs);if(!favs.length)S.editFav=false;render();if(live())refresh()}
   else if(a==="topick"){
     if(!WIDE.matches&&S.sheet==="peek")setSheet("half");
     const row=document.querySelector('[data-act="pick"][data-uid="'+CSS.escape(el.dataset.uid)+'"]');
@@ -713,7 +782,12 @@ document.addEventListener("click",async ev=>{
   }
   else if(a==="nearby")findNearby();
   else if(a==="sheet")cycleSheet();
-  else if(a==="dir"){S.dir=Number(el.dataset.d);S.pick=null;history.replaceState({nextstop:depth},"",toHash());render()}
+  else if(a==="dir"){
+    S.dir=Number(el.dataset.d);S.pick=null;history.replaceState({nextstop:depth},"",toHash());
+    /* 記住這條路線上次看的方向；從搜尋結果進來時沿用（從收藏或站牌看板進來時，用該項目本身的方向） */
+    const m=store.get("route_dir",{});m[S.route.city+"|"+S.route.name]=S.dir;store.set("route_dir",m);
+    render();
+  }
   else if(a==="fav"){toggleFav(JSON.parse(el.dataset.f));render()}
   else if(a==="search"||a==="save")doAction(a);
   else if(a==="clear"){cred=null;store.del("tdx_cred");store.del("tdx_tok");S.msg="已清除金鑰，回到示範資料。";S.msgOk=true;render()}
@@ -866,7 +940,7 @@ function drawMap(){
   }else if(v==="home"){
     /* 同一個位置可能同時是「路線＋站牌」和「站牌看板」，合併成一個點，標籤分行列出，點下去進第一個 */
     const at={};
-    for(const f of shownFavs())for(const p of f.type==="rs"?(f.pos?[f.pos]:[]):(f.pos||[])){
+    for(const f of homeFavs())for(const p of f.type==="rs"?(f.pos?[f.pos]:[]):(f.pos||[])){
       const k=p.join(",");(at[k]=at[k]||{p,fs:[]}).fs.push(f);
     }
     const open=f=>f.type==="rs"
@@ -960,7 +1034,7 @@ function demoApi(path,p){
     if(sm&&s.StopName.Zh_tw!==sm[1])return;
     const gap=(i-pos(d)+8)%8,last=i===7;
     out.push(Object.assign({RouteUID:"DEMO307",RouteName:{Zh_tw:"307"},Direction:d},s,
-      d===1&&i===0?{StopStatus:1,EstimateTime:null}:{StopStatus:0,EstimateTime:gap===0?sec:gap*110+sec,IsLastBus:last&&d===0}));
+      d===1&&i===0?{StopStatus:1,EstimateTime:null}:d===1&&i===1?{StopStatus:1,EstimateTime:720}:{StopStatus:0,EstimateTime:gap===0?sec:gap*110+sec,IsLastBus:last&&d===0}));
   });
   return out;
 }
