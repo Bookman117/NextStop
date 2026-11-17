@@ -6,6 +6,7 @@
 <title>雙北公車即時看板</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700&family=Saira+Condensed:wght@600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" integrity="sha384-c6Rcwz4e4CITMbu/NBmnNS8yN2sC3cUElMEMfP3vqqKFp7GOYaaBBCqmaWBjmkjb" crossorigin="anonymous" referrerpolicy="no-referrer">
 <style>
 /* 版面：單欄手機看板。左側固定寬度的到站時間牌，右側站名與車輛，底部三個分頁。 */
 :root{
@@ -82,18 +83,64 @@ nav{position:fixed;left:0;right:0;bottom:0;background:var(--surface);border-top:
 nav div{max-width:520px;margin:0 auto;display:flex}
 nav button{flex:1;min-height:56px;font-size:14px;color:var(--muted);font-weight:500}
 nav button[aria-current="page"]{color:var(--accent);font-weight:700;box-shadow:inset 0 3px 0 var(--accent)}
+/* .body span 會蓋掉 .tag 的顏色，車牌標籤要用較明確的選擇器 */
+.body .tag{display:inline-block;color:var(--accent-ink)}
+.body .tag.left{color:var(--muted)}
+.body .tag.last{color:var(--now)}
+
+/* ---------- 地圖為主的版面 ----------
+   地圖鋪滿整個畫面，列表放在面板裡浮在地圖上。
+   手機：底部抽屜，可拖曳或點把手切換三段高度（peek／half／full）。
+   桌面（1024px 以上）：左側浮動面板，分頁列移到面板上方。
+   Leaflet 沒載入時（離線或 CDN 被擋）加上 .nomap，退回原本的單欄列表。 */
+:root{--navh:calc(56px + env(safe-area-inset-bottom))}
+html,body{overflow:hidden}
+#map{position:fixed;inset:0;z-index:0;background:var(--off-bg)}
+.map-dark .leaflet-tile-pane{filter:invert(1) hue-rotate(180deg) brightness(.85) contrast(.9) saturate(.6)}
+#app{position:fixed;left:0;right:0;bottom:var(--navh);height:var(--sheet,52dvh);max-width:none;min-height:0;margin:0;z-index:10;
+  background:var(--bg);border-radius:20px 20px 0 0;box-shadow:0 -6px 24px rgba(0,0,0,.22);display:flex;flex-direction:column;transition:height .22s ease}
+#app.dragging{transition:none}
+.grip{display:block;flex:0 0 auto;width:100%;height:22px;touch-action:none;cursor:grab}
+.grip::before{content:"";display:block;width:40px;height:5px;border-radius:3px;background:var(--line);margin:9px auto 0}
+#app header{position:static;padding-top:0;touch-action:none}
+#app main{overflow:auto;overscroll-behavior:contain;padding-bottom:24px}
+nav{z-index:20}
+.row.pick{cursor:pointer}
+.row.sel{background:color-mix(in srgb,var(--accent) 14%,transparent);box-shadow:inset 3px 0 0 var(--accent)}
+.bus{position:relative}
+.bus i{position:absolute;left:-9px;top:-9px;width:18px;height:18px;border-radius:50%;background:var(--now);border:3px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.4)}
+.bus em{position:absolute;left:12px;top:-10px;white-space:nowrap;font:700 11px/1 var(--f-num);font-style:normal;background:var(--ink);color:var(--bg);padding:3px 5px;border-radius:5px}
+.leaflet-tooltip{font:500 12px var(--f-body)}
+.leaflet-container{font-family:var(--f-body)}
+@media (prefers-reduced-motion:reduce){#app{transition:none}}
+@media (min-width:1024px){
+  nav{left:16px;right:auto;top:16px;bottom:auto;width:408px;border:1px solid var(--line);border-radius:14px;padding:0;overflow:hidden}
+  nav button{min-height:44px}
+  #app{left:16px;right:auto;top:76px;bottom:16px;width:408px;height:auto;border-radius:16px;border:1px solid var(--line);box-shadow:0 8px 28px rgba(0,0,0,.22)}
+  .grip{display:none}
+  #app header{padding-top:12px;touch-action:auto}
+}
+.nomap,.nomap body{overflow:auto}
+.nomap #map,.nomap .grip{display:none}
+.nomap #app{position:static;height:auto;max-width:520px;margin:0 auto;min-height:100%;border-radius:0;box-shadow:none;border:0;width:auto}
+.nomap #app header{position:sticky;padding-top:12px}
+.nomap #app main{overflow:visible;padding-bottom:96px}
+@media (min-width:1024px){.nomap nav{left:0;right:0;top:auto;bottom:0;width:auto;border-radius:0;border:0;border-top:1px solid var(--line)}}
 </style>
 </head>
 <body>
+<div id="map" role="region" aria-label="地圖"></div>
 <div id="app">
+  <button class="grip" id="grip" data-act="sheet" aria-label="調整列表高度"></button>
   <header id="head"></header>
   <main id="main"></main>
-  <nav><div>
-    <button data-act="tab" data-v="home" id="tab-home">常用</button>
-    <button data-act="tab" data-v="search" id="tab-search">搜尋</button>
-    <button data-act="tab" data-v="settings" id="tab-settings">設定</button>
-  </div></nav>
 </div>
+<nav><div>
+  <button data-act="tab" data-v="home" id="tab-home">常用</button>
+  <button data-act="tab" data-v="search" id="tab-search">搜尋</button>
+  <button data-act="tab" data-v="settings" id="tab-settings">設定</button>
+</div></nav>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js" integrity="sha384-NElt3Op+9NBMCYaef5HxeJmU4Xeard/Lku8ek6hoPTvYkQPh3zLIrJP7KiRocsxO" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
 <script>
 "use strict";
 const BASE="https://tdx.transportdata.tw/api/basic/v2/Bus/";
@@ -113,8 +160,10 @@ let favs=store.get("bus_favs",[]);
 const isDemo=()=>!cred;
 
 /* ---------- 狀態 ---------- */
-const S={view:"home",q:"",results:null,route:null,dir:0,stopName:null,
+const S={view:"home",q:"",results:null,route:null,dir:0,stopName:null,stopPos:[],pick:null,shape:null,sheet:"half",
   home:{},stops:null,eta:{},near:{},board:null,err:"",busy:false,updated:null,left:REFRESH,msg:""};
+const stopPosByName={};   // 搜尋結果帶回的站牌座標：站名 -> [[lat,lon],...]
+const pos=p=>p&&p.PositionLat&&p.PositionLon?[+p.PositionLat.toFixed(5),+p.PositionLon.toFixed(5)]:null;
 // RouteUID -> {dep,dest,name,city,t}；存在 localStorage，超過 7 天的項目載入時丟掉
 const routeInfo=Object.fromEntries(Object.entries(store.get("route_info",{})).filter(([,v])=>v&&Date.now()-v.t<7*864e5));
 const $=id=>document.getElementById(id);
@@ -235,7 +284,7 @@ async function loadHome(stale){
   S.home=out;
 }
 async function loadRouteStatic(stale){
-  const {city,name}=S.route,key="sor|"+city+"|"+name;
+  const {city,name}=S.route,key="sor2|"+city+"|"+name;
   let byDir=isDemo()?null:cacheGet(key,7*DAY);
   if(!byDir){
     const rows=await api("StopOfRoute/City/"+city+"/"+encodeURIComponent(name),{"$filter":"RouteName/Zh_tw eq '"+q1(name)+"'"},stale);
@@ -244,7 +293,7 @@ async function loadRouteStatic(stale){
       if(zh(r.RouteName)!==name)continue;
       const cur=byDir[r.Direction];
       if(!cur||r.Stops.length>cur.Stops.length)
-        byDir[r.Direction]={RouteUID:r.RouteUID,Stops:r.Stops.map(s=>({StopUID:s.StopUID,StopName:{Zh_tw:zh(s.StopName)}}))};
+        byDir[r.Direction]={RouteUID:r.RouteUID,Stops:r.Stops.map(s=>({StopUID:s.StopUID,StopName:{Zh_tw:zh(s.StopName)},pos:pos(s.StopPosition)}))};
     }
     if(!isDemo()&&Object.keys(byDir).length)cacheSet(key,byDir);
   }
@@ -264,6 +313,27 @@ async function loadRouteLive(stale){
   for(const e of eta){const k=e.Direction+"|"+e.StopUID;m[k]=better(m[k],e)}
   for(const b of near){const k=b.Direction+"|"+b.StopUID;(n[k]=n[k]||[]).push(b)}
   S.eta=m;S.near=n;
+}
+/* 路線線形：靜態資料，快取 7 天；在到站資料之後才排隊，拿不到就用站牌連線代替 */
+function parseWKT(w){
+  return String(w||"").split(/\)\s*,\s*\(/).map(seg=>(seg.match(/-?\d+(?:\.\d+)?\s+-?\d+(?:\.\d+)?/g)||[])
+    .map(t=>{const [x,y]=t.trim().split(/\s+/).map(Number);return [+y.toFixed(5),+x.toFixed(5)]})).filter(l=>l.length>1);
+}
+async function loadShape(stale){
+  const {city,name}=S.route,key="shape|"+city+"|"+name;
+  if(isDemo()){S.shape={};return}
+  let sh=cacheGet(key,7*DAY);
+  if(!sh){
+    const rows=await api("Shape/City/"+city+"/"+encodeURIComponent(name),{"$filter":"RouteName/Zh_tw eq '"+q1(name)+"'"},stale);
+    sh={};
+    for(const r of rows){
+      if(zh(r.RouteName)!==name)continue;
+      const lines=parseWKT(r.Geometry),d=r.Direction==null?"any":r.Direction;
+      if(lines.length&&(!sh[d]||lines.flat().length>sh[d].flat().length))sh[d]=lines;
+    }
+    cacheSet(key,sh);
+  }
+  S.shape=sh;
 }
 async function loadStop(stale){
   const name=S.stopName,rows=[];
@@ -292,10 +362,13 @@ async function doSearch(){
   await Promise.all(CITIES.map(async([c])=>{
     const [rs,ss]=await Promise.all([
       api("Route/City/"+c,{"$filter":"contains(RouteName/Zh_tw,'"+q1(q)+"')","$select":"RouteUID,RouteName,DepartureStopNameZh,DestinationStopNameZh","$top":"40"},stale),
-      api("Stop/City/"+c,{"$filter":"contains(StopName/Zh_tw,'"+q1(q)+"')","$select":"StopName","$top":"400"},stale)
+      api("Stop/City/"+c,{"$filter":"contains(StopName/Zh_tw,'"+q1(q)+"')","$select":"StopName,StopPosition","$top":"400"},stale)
     ]);
     for(const r of rs){keepRoute(r,c);routes.push({uid:r.RouteUID,name:zh(r.RouteName),dep:r.DepartureStopNameZh||"",dest:r.DestinationStopNameZh||"",city:c})}
-    for(const s of ss)stops.add(zh(s.StopName));
+    for(const s of ss){
+      const n=zh(s.StopName),p=pos(s.StopPosition);stops.add(n);
+      if(p){const a=stopPosByName[n]=stopPosByName[n]||[];if(!a.some(x=>x[0]===p[0]&&x[1]===p[1]))a.push(p)}
+    }
   }));
   saveRoutes();
   const seen=new Set();
@@ -308,9 +381,9 @@ async function doSearch(){
 /* ---------- 常用 ---------- */
 const favId=f=>f.type==="rs"?"rs|"+f.routeUID+"|"+f.dir+"|"+f.stopUID:"st|"+f.name;
 const DEMO_FAVS=[
-  {type:"rs",city:"Taipei",route:"307",routeUID:"DEMO307",dir:0,stopUID:"D0-3",stopName:"捷運西門站",toward:"撫遠街"},
-  {type:"rs",city:"Taipei",route:"307",routeUID:"DEMO307",dir:1,stopUID:"D1-2",stopName:"南京敦化路口",toward:"板橋"},
-  {type:"st",name:"捷運西門站"}
+  {type:"rs",city:"Taipei",route:"307",routeUID:"DEMO307",dir:0,stopUID:"D0-3",stopName:"捷運西門站",toward:"撫遠街",pos:[25.0421,121.5081]},
+  {type:"rs",city:"Taipei",route:"307",routeUID:"DEMO307",dir:1,stopUID:"D1-2",stopName:"南京敦化路口",toward:"板橋",pos:[25.0519,121.5489]},
+  {type:"st",name:"捷運西門站",pos:[[25.0421,121.5081]]}
 ];
 const shownFavs=()=>isDemo()&&!favs.length?DEMO_FAVS:favs;
 const isFav=id=>favs.some(f=>favId(f)===id);
@@ -332,6 +405,8 @@ async function refresh(){
     S.err="";S.updated=new Date();
   }catch(e){if(my!==seq)return;S.err=errText(e)}
   S.busy=false;render();
+  if(S.view==="route"&&S.stops&&!S.shape&&!S.err)
+    loadShape(stale).then(()=>{if(!stale())drawMap()}).catch(e=>{if(e!==STALE&&!stale()){S.shape={};drawMap()}});
 }
 const live=()=>S.view==="home"||S.view==="route"||S.view==="stop";
 setInterval(()=>{
@@ -344,7 +419,9 @@ setInterval(()=>{
 document.addEventListener("visibilitychange",()=>{if(!document.hidden&&live())refresh()});
 function go(view,patch){
   Object.assign(S,{view,err:"",msg:""},patch||{});
-  render();window.scrollTo(0,0);
+  if(view==="search"||view==="settings")setSheet("full");
+  else if(S.sheet==="full")setSheet("half");
+  render();$("main").scrollTop=0;
   if(live())refresh();
 }
 
@@ -361,7 +438,7 @@ function render(){
   if(S.view==="settings")title="設定";
   let h='<div class="bar">'+(back?'<button class="back" data-act="back" aria-label="返回">←</button>':"")+
     '<h1>'+esc(title)+(sub?"<small>"+esc(sub)+"</small>":"")+"</h1>"+
-    (S.view==="stop"?starBtn({type:"st",name:S.stopName}):"")+"</div>";
+    (S.view==="stop"?starBtn({type:"st",name:S.stopName,pos:S.stopPos.length?S.stopPos:undefined}):"")+"</div>";
   if(live())h+='<div class="meta"><span>'+(S.updated?"更新於 "+hm(S.updated)+":"+p2(S.updated.getSeconds()):"載入中")+
     '</span><span id="wait" style="color:var(--soon)"></span><span>每 '+REFRESH+' 秒自動更新</span></div><div class="prog"><i id="prog" style="width:'+(S.left/REFRESH*100)+'%"></i></div>';
   $("head").innerHTML=h;
@@ -372,6 +449,11 @@ function render(){
   if(S.err)m+='<div class="err" role="alert">'+esc(S.err)+"</div>";
   m+=({home:vHome,search:vSearch,route:vRoute,stop:vStop,settings:vSettings})[S.view]();
   $("main").innerHTML=m;
+  drawMap();
+  if(S.scrollPick&&S.view==="route"&&S.stops){
+    const row=document.querySelector('[data-act="pick"][data-uid="'+CSS.escape(S.scrollPick)+'"]');
+    S.scrollPick=null;if(row)row.scrollIntoView({block:"center"});
+  }
 }
 function starBtn(f){
   const on=isFav(favId(f));
@@ -392,14 +474,14 @@ function vHome(){
     h+='<div class="sec">常用路線與站牌</div><div class="list">';
     for(const f of sorted){
       const e=S.home[favId(f)];
-      h+='<button class="row" data-act="route" data-city="'+esc(f.city)+'" data-name="'+esc(f.route)+'" data-dir="'+f.dir+'">'+etaBox(e)+
+      h+='<button class="row" data-act="route" data-city="'+esc(f.city)+'" data-name="'+esc(f.route)+'" data-dir="'+f.dir+'" data-uid="'+esc(f.stopUID)+'">'+etaBox(e)+
         '<div class="body"><b><span class="rt" style="display:inline;color:inherit">'+esc(f.route)+"</span>　"+esc(f.stopName)+"</b><span>往 "+esc(f.toward)+"</span>"+tags(e)+"</div></button>";
     }
     h+="</div>";
   }
   if(st.length){
     h+='<div class="sec">常用站牌看板</div><div class="list">';
-    for(const f of st)h+='<button class="row" data-act="stop" data-name="'+esc(f.name)+'"><div class="body"><b>'+esc(f.name)+"</b><span>查看經過的所有路線</span></div><span aria-hidden=\"true\">›</span></button>";
+    for(const f of st)h+='<button class="row" data-act="stop" data-name="'+esc(f.name)+'"'+(f.pos?" data-pos='"+esc(JSON.stringify(f.pos))+"'":"")+'><div class="body"><b>'+esc(f.name)+"</b><span>查看經過的所有路線</span></div><span aria-hidden=\"true\">›</span></button>";
     h+="</div>";
   }
   return h;
@@ -437,8 +519,9 @@ function vRoute(){
   h+='<div class="list">';
   for(const s of cur.Stops){
     const k=S.dir+"|"+s.StopUID,e=S.eta[k];
-    const f={type:"rs",city:S.route.city,route:S.route.name,routeUID:cur.RouteUID,dir:S.dir,stopUID:s.StopUID,stopName:zh(s.StopName),toward:tw};
-    h+='<div class="row">'+etaBox(e)+'<div class="body"><b>'+esc(zh(s.StopName))+"</b>"+tags(e,S.near[k])+"</div>"+starBtn(f)+"</div>";
+    const f={type:"rs",city:S.route.city,route:S.route.name,routeUID:cur.RouteUID,dir:S.dir,stopUID:s.StopUID,stopName:zh(s.StopName),toward:tw,pos:s.pos};
+    const sel=S.pick===s.StopUID;
+    h+='<div class="row pick'+(sel?" sel":"")+'" data-act="pick" data-uid="'+esc(s.StopUID)+'" tabindex="0" role="button" aria-pressed="'+sel+'" aria-label="'+esc(zh(s.StopName))+'，在地圖上顯示">'+etaBox(e)+'<div class="body"><b>'+esc(zh(s.StopName))+"</b>"+tags(e,S.near[k])+"</div>"+starBtn(f)+"</div>";
   }
   return h+"</div>";
 }
@@ -472,21 +555,28 @@ function vSettings(){
 
 /* ---------- 事件 ---------- */
 document.addEventListener("click",async ev=>{
+  if(dragEnded)return;
   const el=ev.target.closest("[data-act]");if(!el)return;
   const a=el.dataset.act;
   if(a==="tab")go(el.dataset.v);
   else if(a==="back")go(S.prev||"search");
   else if(a==="route"){
     const prev=S.view==="route"?S.prev:S.view;
-    go("route",{route:{city:el.dataset.city,name:el.dataset.name},dir:Number(el.dataset.dir||0),stops:null,eta:{},near:{},prev,updated:null});
+    go("route",{route:{city:el.dataset.city,name:el.dataset.name},dir:Number(el.dataset.dir||0),stops:null,shape:null,pick:el.dataset.uid||null,scrollPick:el.dataset.uid||null,eta:{},near:{},prev,updated:null});
   }
-  else if(a==="stop")go("stop",{stopName:el.dataset.name,board:null,prev:S.view==="stop"?S.prev:S.view,updated:null});
-  else if(a==="dir"){S.dir=Number(el.dataset.d);render()}
+  else if(a==="stop"){
+    const name=el.dataset.name,p=el.dataset.pos?JSON.parse(el.dataset.pos):(stopPosByName[name]||[]);
+    go("stop",{stopName:name,stopPos:p,board:null,prev:S.view==="stop"?S.prev:S.view,updated:null});
+  }
+  else if(a==="pick")pickStop(el.dataset.uid,"list");
+  else if(a==="sheet")cycleSheet();
+  else if(a==="dir"){S.dir=Number(el.dataset.d);S.pick=null;render()}
   else if(a==="fav"){toggleFav(JSON.parse(el.dataset.f));render()}
   else if(a==="search"||a==="save")doAction(a);
   else if(a==="clear"){cred=null;store.del("tdx_cred");store.del("tdx_tok");S.msg="已清除金鑰，回到示範資料。";S.msgOk=true;render()}
 });
 document.addEventListener("keydown",ev=>{
+  if((ev.key==="Enter"||ev.key===" ")&&ev.target.dataset&&ev.target.dataset.act==="pick"){ev.preventDefault();pickStop(ev.target.dataset.uid,"list");return}
   if(ev.key!=="Enter"||ev.isComposing)return;
   if(ev.target.id==="q")doAction("search");
   else if(ev.target.id==="cid"||ev.target.id==="csec")doAction("save");
@@ -509,19 +599,147 @@ async function doAction(kind){
   }
 }
 
+/* ---------- 地圖 ---------- */
+/* 底圖：內政部國土測繪中心「臺灣通用電子地圖」WMTS，免金鑰；深色模式用 CSS 反相。
+   地圖不另外呼叫 TDX 抓 GPS：公車畫在 RealTimeNearStop 回報的站牌位置上，精度到「站」，不增加每輪更新的呼叫次數。 */
+const WIDE=matchMedia("(min-width:1024px)"),DARK=matchMedia("(prefers-color-scheme:dark)"),CALM=matchMedia("(prefers-reduced-motion:reduce)");
+let map=null,lay=null,fitKey="";
+const css=v=>getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+function initMap(){
+  if(!window.L){document.documentElement.classList.add("nomap");return}
+  map=L.map("map",{zoomControl:false,attributionControl:false}).setView([25.04,121.52],12);
+  L.tileLayer("https://wmts.nlsc.gov.tw/wmts/EMAP/default/GoogleMapsCompatible/{z}/{y}/{x}",{maxZoom:19,
+    attribution:'<a href="https://maps.nlsc.gov.tw/" target="_blank" rel="noopener">內政部國土測繪中心</a>'}).addTo(map);
+  L.control.zoom({position:"topright"}).addTo(map);
+  L.control.attribution({position:WIDE.matches?"bottomright":"topleft",prefix:'<a href="https://leafletjs.com" target="_blank" rel="noopener">Leaflet</a>'}).addTo(map);
+  lay=L.layerGroup().addTo(map);
+  const dark=()=>$("map").classList.toggle("map-dark",DARK.matches);dark();DARK.addEventListener("change",()=>{dark();drawMap()});
+  WIDE.addEventListener("change",()=>{fitKey="";map.invalidateSize();drawMap()});
+}
+/* 被面板蓋住的區域不算可視範圍 */
+function pad(){
+  if(WIDE.matches)return {paddingTopLeft:[440,40],paddingBottomRight:[60,40]};
+  return {paddingTopLeft:[30,50],paddingBottomRight:[30,$("app").offsetHeight+70]};
+}
+function fit(key,pts,zoom){
+  if(!pts.length||key===fitKey)return;
+  fitKey=key;
+  if(pts.length===1){map.setView(pts[0],zoom||17,{animate:false});
+    const o=pad();map.panBy([((o.paddingTopLeft[0]-o.paddingBottomRight[0])/-2),((o.paddingTopLeft[1]-o.paddingBottomRight[1])/-2)],{animate:false});return}
+  map.fitBounds(L.latLngBounds(pts),Object.assign({maxZoom:17,animate:false},pad()));
+}
+const dot=(p,sel,label,onClick,perm)=>{
+  const m=L.circleMarker(p,{radius:sel?9:perm?7:5,weight:2,color:"#fff",fillColor:sel?css("--now"):css("--accent"),fillOpacity:1})
+    .bindTooltip(label,{direction:"top",offset:[0,-6],permanent:!!(sel||perm)});
+  if(onClick)m.on("click",onClick);
+  return m.addTo(lay);
+};
+function drawMap(){
+  if(!map)return;
+  lay.clearLayers();
+  const v=S.view;
+  if(v==="route"&&S.stops&&S.stops[S.dir]){
+    const cur=S.stops[S.dir],pts=cur.Stops.filter(s=>s.pos);
+    const shape=S.shape&&(S.shape[S.dir]||S.shape.any);
+    const lines=shape&&shape.length?shape:[pts.map(s=>s.pos)];
+    for(const l of lines)L.polyline(l,{color:css("--accent"),weight:6,opacity:.85,interactive:false}).addTo(lay);
+    for(const s of pts)dot(s.pos,S.pick===s.StopUID,esc(zh(s.StopName)),()=>pickStop(s.StopUID,"map"));
+    for(const s of pts)for(const b of S.near[S.dir+"|"+s.StopUID]||[])
+      L.marker(s.pos,{keyboard:false,icon:L.divIcon({className:"bus",html:"<i></i><em>"+esc(b.PlateNumb)+"</em>",iconSize:[0,0]}),zIndexOffset:500}).addTo(lay);
+    const sel=pts.find(s=>s.StopUID===S.pick);
+    fit("route|"+S.route.city+"|"+S.route.name+"|"+S.dir,sel?[sel.pos]:pts.map(s=>s.pos),16);
+  }else if(v==="stop"){
+    for(const p of S.stopPos)dot(p,true,esc(S.stopName));
+    fit("stop|"+S.stopName,S.stopPos,17);
+  }else if(v==="home"){
+    /* 同一個位置可能同時是「路線＋站牌」和「站牌看板」，合併成一個點，標籤分行列出，點下去進第一個 */
+    const at={};
+    for(const f of shownFavs())for(const p of f.type==="rs"?(f.pos?[f.pos]:[]):(f.pos||[])){
+      const k=p.join(",");(at[k]=at[k]||{p,fs:[]}).fs.push(f);
+    }
+    const open=f=>f.type==="rs"
+      ?go("route",{route:{city:f.city,name:f.route},dir:f.dir,stops:null,shape:null,pick:f.stopUID,scrollPick:f.stopUID,eta:{},near:{},prev:"home",updated:null})
+      :go("stop",{stopName:f.name,stopPos:f.pos||[],board:null,prev:"home",updated:null});
+    for(const {p,fs} of Object.values(at))
+      dot(p,false,fs.map(f=>esc(f.type==="rs"?f.route+"　"+f.stopName:f.name+"（站牌）")).join("<br>"),()=>open(fs[0]),true);
+    fit("home|"+Object.keys(at).length,Object.values(at).map(x=>x.p));
+  }
+}
+/* 列表與地圖同步選取：點列表移動地圖，點地圖上的站讓列表捲到該站 */
+function pickStop(uid,from){
+  S.pick=S.pick===uid&&from==="list"?null:uid;
+  const cur=S.stops&&S.stops[S.dir],s=cur&&cur.Stops.find(x=>x.StopUID===uid);
+  render();
+  if(map&&s&&s.pos&&S.pick){
+    if(!WIDE.matches&&S.sheet==="full")setSheet("half");
+    const o=pad(),z=Math.max(map.getZoom(),15);
+    const pt=map.project(s.pos,z).subtract([((o.paddingTopLeft[0]-o.paddingBottomRight[0])/2),((o.paddingTopLeft[1]-o.paddingBottomRight[1])/2)]);
+    map.setView(map.unproject(pt,z),z,{animate:!CALM.matches});
+  }
+  if(from==="map"){
+    if(!WIDE.matches&&S.sheet==="peek")setSheet("half");
+    const row=document.querySelector('[data-act="pick"][data-uid="'+CSS.escape(uid)+'"]');
+    if(row)row.scrollIntoView({block:"center",behavior:CALM.matches?"auto":"smooth"});
+  }
+}
+
+/* ---------- 手機抽屜 ---------- */
+/* 三段高度：peek 只露出標題列、half 約半個畫面、full 幾乎滿版。把手可點按循環，標題列與把手可拖曳。 */
+const SHEETS=["peek","half","full"];
+let dragEnded=false;   // 拖曳結束時瀏覽器會補一次 click，這段時間內忽略
+function sheetPx(k){
+  const vh=innerHeight,nav=document.querySelector("nav").offsetHeight;
+  if(k==="peek")return 22+$("head").offsetHeight;
+  if(k==="full")return vh-nav-56;
+  return Math.round(vh*0.52);
+}
+function setSheet(k){
+  S.sheet=k;
+  if(WIDE.matches){$("app").style.removeProperty("--sheet");return}
+  $("app").style.setProperty("--sheet",sheetPx(k)+"px");
+  $("grip").setAttribute("aria-label","調整列表高度（目前："+({peek:"收起",half:"一半",full:"展開"})[k]+"）");
+  if(map)setTimeout(()=>map.invalidateSize(),260);
+}
+function cycleSheet(){setSheet(SHEETS[(SHEETS.indexOf(S.sheet)+1)%3])}
+(function(){
+  let y0=0,h0=0,moved=false,on=false;
+  const app=$("app");
+  app.addEventListener("pointerdown",ev=>{
+    if(WIDE.matches||!ev.target.closest(".grip,header")||ev.target.closest("header button"))return;
+    on=true;moved=false;y0=ev.clientY;h0=app.offsetHeight;app.classList.add("dragging");
+  });
+  addEventListener("pointermove",ev=>{
+    if(!on)return;const dy=ev.clientY-y0;if(Math.abs(dy)>6)moved=true;
+    if(moved)app.style.setProperty("--sheet",Math.max(sheetPx("peek"),Math.min(sheetPx("full"),h0-dy))+"px");
+  });
+  addEventListener("pointerup",ev=>{
+    if(!on)return;on=false;app.classList.remove("dragging");
+    if(!moved)return;
+    const h=app.offsetHeight;let best="half";
+    for(const k of SHEETS)if(Math.abs(sheetPx(k)-h)<Math.abs(sheetPx(best)-h))best=k;
+    setSheet(best);
+    dragEnded=true;setTimeout(()=>{dragEnded=false},80);
+  });
+})();
+addEventListener("resize",()=>{if(!WIDE.matches)setSheet(S.sheet)});
+
 /* ---------- 示範資料（未填金鑰時使用） ---------- */
 const DEMO={
   0:["板橋","捷運龍山寺站","和平醫院","捷運西門站","捷運台北車站","南京建國路口","南京敦化路口","撫遠街"],
   1:["撫遠街","南京三民路口","南京敦化路口","南京建國路口","捷運台北車站","捷運西門站","捷運龍山寺站","板橋"]
 };
+/* 示範站牌的大約座標（只為了畫示範地圖，不是 TDX 資料） */
+const DEMO_POS={"板橋":[25.0143,121.4637],"捷運龍山寺站":[25.0353,121.4999],"和平醫院":[25.0359,121.5059],"捷運西門站":[25.0421,121.5081],
+  "捷運台北車站":[25.0461,121.5174],"南京建國路口":[25.0521,121.5371],"南京敦化路口":[25.0519,121.5489],"南京三民路口":[25.0517,121.5619],"撫遠街":[25.0527,121.5651]};
+const demoPos=n=>({PositionLat:DEMO_POS[n][0],PositionLon:DEMO_POS[n][1]});
 function demoApi(path,p){
   const now=Math.floor(Date.now()/1000),f=p["$filter"]||"";
   const route={RouteUID:"DEMO307",RouteName:{Zh_tw:"307"},DepartureStopNameZh:"板橋",DestinationStopNameZh:"撫遠街"};
   const m=/contains\([^,]+,'(.*)'\)/.exec(f),kw=m?m[1]:"";
   if(path.startsWith("Route/"))return path.endsWith("/Taipei")&&(!m||"307".includes(kw))?[route]:[];
-  if(path.startsWith("Stop/"))return path.endsWith("/Taipei")?[...new Set(DEMO[0].concat(DEMO[1]))].filter(n=>n.includes(kw)).map(n=>({StopName:{Zh_tw:n}})):[];
+  if(path.startsWith("Stop/"))return path.endsWith("/Taipei")?[...new Set(DEMO[0].concat(DEMO[1]))].filter(n=>n.includes(kw)).map(n=>({StopName:{Zh_tw:n},StopPosition:demoPos(n)})):[];
   if(!path.includes("/Taipei"))return [];
-  const stops=d=>DEMO[d].map((n,i)=>({StopUID:"D"+d+"-"+i,StopName:{Zh_tw:n},StopSequence:i+1}));
+  const stops=d=>DEMO[d].map((n,i)=>({StopUID:"D"+d+"-"+i,StopName:{Zh_tw:n},StopSequence:i+1,StopPosition:demoPos(n)}));
   if(path.startsWith("StopOfRoute/"))return [0,1].map(d=>({RouteUID:"DEMO307",RouteName:{Zh_tw:"307"},Direction:d,Stops:stops(d)}));
   const pos=d=>Math.floor(now/45+d*3)%8,sec=45-now%45;
   if(path.startsWith("RealTimeNearStop/"))return [0,1].map(d=>({PlateNumb:d?"EAL-0372":"EAL-0158",Direction:d,StopUID:"D"+d+"-"+pos(d),A2EventType:sec>20?1:0}));
@@ -535,7 +753,7 @@ function demoApi(path,p){
   return out;
 }
 
-render();refresh();
+initMap();setSheet(S.sheet);render();refresh();
 </script>
 </body>
 </html>
