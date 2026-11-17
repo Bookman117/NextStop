@@ -12,7 +12,7 @@
 :root{
   --bg:#eef1f4; --surface:#ffffff; --ink:#14232e; --muted:#5d6f7c; --line:#d5dce2;
   --accent:#0b6e8a; --accent-ink:#ffffff;
-  --now:#c8321e; --now-bg:#fde6e1; --soon:#a55b00; --soon-bg:#fff0d6; --ok-bg:#e3eef2; --off-bg:#e9ecef;
+  --now:#c8321e; --now-ink:#ffffff; --now-bg:#fde6e1; --soon:#a55b00; --soon-bg:#fff0d6; --ok-bg:#e3eef2; --off-bg:#e9ecef;
   --f-num:"Saira Condensed","Noto Sans TC",sans-serif;
   --f-body:"Noto Sans TC","PingFang TC","Microsoft JhengHei",sans-serif;
   color-scheme:light;
@@ -21,7 +21,7 @@
   :root{
     --bg:#0e171d; --surface:#17232b; --ink:#e6edf1; --muted:#93a4b0; --line:#2a3943;
     --accent:#4fb6d1; --accent-ink:#06222b;
-    --now:#ff8a75; --now-bg:#4a1c14; --soon:#ffc266; --soon-bg:#45300c; --ok-bg:#1f3640; --off-bg:#222e36;
+    --now:#ff8a75; --now-ink:#2a0904; --now-bg:#4a1c14; --soon:#ffc266; --soon-bg:#45300c; --ok-bg:#1f3640; --off-bg:#222e36;
     color-scheme:dark;
   }
 }
@@ -51,10 +51,11 @@ main{flex:1;padding:12px 16px 96px;display:flex;flex-direction:column;gap:12px}
 .eta{flex:0 0 78px;height:44px;border-radius:10px;display:flex;flex-direction:column;align-items:center;justify-content:center;background:var(--ok-bg);font-family:var(--f-num);font-size:24px;font-weight:700;line-height:1;font-variant-numeric:tabular-nums}
 .eta small{font-family:var(--f-body);font-size:10px;font-weight:500;margin-top:2px}
 .eta.txt{font-family:var(--f-body);font-size:13px;font-weight:700}
-.eta.now{background:var(--now);color:#fff;animation:pulse 1.2s ease-in-out infinite}
+/* 進站中：閃爍改用外圈光暈，不動文字與底色的不透明度，對比在動畫中保持不變 */
+.eta.now{background:var(--now);color:var(--now-ink);animation:pulse 1.2s ease-in-out infinite}
 .eta.soon{background:var(--soon-bg);color:var(--soon)}
 .eta.off{background:var(--off-bg);color:var(--muted);font-family:var(--f-body);font-size:12px;font-weight:500}
-@keyframes pulse{50%{opacity:.6}}
+@keyframes pulse{0%,100%{box-shadow:0 0 0 0 transparent}50%{box-shadow:0 0 0 4px color-mix(in srgb,var(--now) 45%,transparent)}}
 @media (prefers-reduced-motion:reduce){.eta.now{animation:none}.prog i{transition:none}}
 .body{flex:1;min-width:0}
 .body b{display:block;font-weight:500;overflow-wrap:anywhere}
@@ -106,6 +107,8 @@ html,body{overflow:hidden}
 .grip::before{content:"";display:block;width:40px;height:5px;border-radius:3px;background:var(--line);margin:9px auto 0}
 #app header{position:static;padding-top:0;touch-action:none}
 #app main{overflow:auto;overscroll-behavior:contain;padding-bottom:24px}
+/* main 是 flex 直排；子元素預設會縮小，列表又是 overflow:hidden，會被壓扁裁掉。固定不縮，讓 main 自己捲動 */
+#app main>*{flex-shrink:0}
 nav{z-index:20}
 .row.pick{cursor:pointer}
 .row.sel{background:color-mix(in srgb,var(--accent) 14%,transparent);box-shadow:inset 3px 0 0 var(--accent)}
@@ -444,8 +447,40 @@ setInterval(()=>{
   if(S.left<=0)refresh();
 },1000);
 document.addEventListener("visibilitychange",()=>{if(!document.hidden&&live())refresh()});
-function go(view,patch){
+/* ---------- 網址與瀏覽紀錄 ----------
+   每個畫面對應一個 hash：#home、#search、#settings、#route/{City}/{路線}/{方向}、#stop/{站名}。
+   換頁時寫入瀏覽紀錄，手機返回手勢與瀏覽器上一頁會回到前一個畫面；路線頁也能加入書籤。 */
+function toHash(){
+  const e=encodeURIComponent;
+  if(S.view==="route")return "#route/"+e(S.route.city)+"/"+e(S.route.name)+"/"+S.dir;
+  if(S.view==="stop")return "#stop/"+e(S.stopName);
+  return "#"+S.view;
+}
+function fromHash(h){
+  let p;try{p=String(h||"").replace(/^#\/?/,"").split("/").map(decodeURIComponent)}catch(e){p=[]}
+  if(p[0]==="route"&&CITY_NAME[p[1]]&&p[2])
+    return ["route",{route:{city:p[1],name:p[2]},dir:Number(p[3])||0,stops:null,shape:null,pick:null,eta:{},near:{},updated:null}];
+  if(p[0]==="stop"&&p[1]){
+    const f=favs.find(x=>x.type==="st"&&x.name===p[1]);
+    return ["stop",{stopName:p[1],stopPos:stopPosByName[p[1]]||(f&&f.pos)||[],board:null,updated:null}];
+  }
+  if(p[0]==="search"||p[0]==="settings")return [p[0],{}];
+  return ["home",{}];
+}
+let depth=0;   // 這次開啟後在看板內前進了幾頁；0 表示返回鍵會離開看板
+addEventListener("popstate",ev=>{
+  depth=ev.state&&ev.state.nextstop||0;
+  const [v,p]=fromHash(location.hash);
+  if(!p.prev)p.prev="home";
+  go(v,p,{push:false});
+  if(toHash()!==location.hash)history.replaceState({nextstop:depth},"",toHash());   // 無效網址改正為實際畫面
+});
+function go(view,patch,opt){
   Object.assign(S,{view,err:"",msg:""},patch||{});
+  if(!opt||opt.push!==false){
+    const h=toHash();
+    if(h!==location.hash){depth++;history.pushState({nextstop:depth},"",h)}
+  }
   if(view==="search"||view==="settings")setSheet("full");
   else if(S.sheet==="full")setSheet("half");
   render();$("main").scrollTop=0;
@@ -586,7 +621,7 @@ document.addEventListener("click",async ev=>{
   const el=ev.target.closest("[data-act]");if(!el)return;
   const a=el.dataset.act;
   if(a==="tab")go(el.dataset.v);
-  else if(a==="back")go(S.prev||"search");
+  else if(a==="back"){if(depth>0)history.back();else go(S.prev||"search")}
   else if(a==="route"){
     const prev=S.view==="route"?S.prev:S.view;
     go("route",{route:{city:el.dataset.city,name:el.dataset.name},dir:Number(el.dataset.dir||0),stops:null,shape:null,pick:el.dataset.uid||null,scrollPick:el.dataset.uid||null,eta:{},near:{},prev,updated:null});
@@ -597,7 +632,7 @@ document.addEventListener("click",async ev=>{
   }
   else if(a==="pick")pickStop(el.dataset.uid,"list");
   else if(a==="sheet")cycleSheet();
-  else if(a==="dir"){S.dir=Number(el.dataset.d);S.pick=null;render()}
+  else if(a==="dir"){S.dir=Number(el.dataset.d);S.pick=null;history.replaceState({nextstop:depth},"",toHash());render()}
   else if(a==="fav"){toggleFav(JSON.parse(el.dataset.f));render()}
   else if(a==="search"||a==="save")doAction(a);
   else if(a==="clear"){cred=null;store.del("tdx_cred");store.del("tdx_tok");S.msg="已清除金鑰，回到示範資料。";S.msgOk=true;render()}
@@ -782,7 +817,13 @@ function demoApi(path,p){
   return out;
 }
 
-initMap();setSheet(S.sheet);render();refresh();
+initMap();setSheet(S.sheet);
+(function(){
+  const [v,p]=fromHash(location.hash);   // 無效的 hash 會落回首頁，網址也一併改正
+  if(v!=="home")p.prev="home";
+  go(v,p,{push:false});
+  history.replaceState({nextstop:0},"",location.pathname+location.search+toHash());
+})();
 </script>
 </body>
 </html>
