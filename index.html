@@ -100,7 +100,7 @@ const BASE="https://tdx.transportdata.tw/api/basic/v2/Bus/";
 const TOKEN_URL="https://tdx.transportdata.tw/auth/realms/TDXConnect/protocol/openid-connect/token";
 const CITIES=[["Taipei","台北"],["NewTaipei","新北"]];
 const CITY_NAME=Object.fromEntries(CITIES);
-const REFRESH=30;
+const REFRESH=60;
 
 /* ---------- 本機儲存 ---------- */
 const store={
@@ -115,30 +115,57 @@ const isDemo=()=>!cred;
 /* ---------- 狀態 ---------- */
 const S={view:"home",q:"",results:null,route:null,dir:0,stopName:null,
   home:{},stops:null,eta:{},near:{},board:null,err:"",busy:false,updated:null,left:REFRESH,msg:""};
-const routeInfo={};   // RouteUID -> {dep,dest,name,city}
+// RouteUID -> {dep,dest,name,city,t}；存在 localStorage，超過 7 天的項目載入時丟掉
+const routeInfo=Object.fromEntries(Object.entries(store.get("route_info",{})).filter(([,v])=>v&&Date.now()-v.t<7*864e5));
 const $=id=>document.getElementById(id);
 const esc=s=>String(s==null?"":s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const q1=s=>String(s).replace(/'/g,"''");
 const zh=o=>(o&&(o.Zh_tw||o.En))||"";
 
 /* ---------- TDX 連線 ---------- */
-/* 依序送出請求，兩次之間至少間隔 GAP 毫秒；遇到 429 等待後重試，避免超過 TDX 每秒上限 */
-const GAP=350;let chain=Promise.resolve(),lastAt=0;
+/* TDX 基礎會員（免費）：每把金鑰每分鐘 5 次；每月 3 點，基礎服務 1,500 次折 1 點，約 4,500 次。
+   請求依序排隊，任一 WINDOW 時間內最多 PER_MIN 次。呼叫時間記在 localStorage，同一瀏覽器的分頁共用。
+   遇到 429 先停到配額恢復（Retry-After 或一整個視窗），再重試一次。 */
+const PER_MIN=5,WINDOW=61000,MONTH_FREE=4500,DAY=864e5;
+let chain=Promise.resolve(),waitUntil=0;
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));
-function queued(fn){
+const STALE=new Error("stale");
+const monthKey=()=>{const d=new Date();return d.getFullYear()+"-"+p2(d.getMonth()+1)};
+function usage(){const u=store.get("tdx_usage",null),m=monthKey();return u&&u.m===m?u:{m,n:0}}
+function slotWait(){
+  const now=Date.now(),recent=store.get("tdx_calls",[]).filter(t=>now-t<WINDOW);
+  let w=Math.max(0,store.get("tdx_block",0)-now);
+  if(recent.length>=PER_MIN)w=Math.max(w,recent[recent.length-PER_MIN]+WINDOW-now);
+  return w;
+}
+function markCall(){
+  const now=Date.now();
+  store.set("tdx_calls",store.get("tdx_calls",[]).filter(t=>now-t<WINDOW).concat(now));
+  const u=usage();u.n++;store.set("tdx_usage",u);
+}
+/* stale()：呼叫端已不需要這筆資料（換頁或下一輪更新開始）時回傳 true，排隊中的請求就不送出，省下配額 */
+function queued(fn,stale){
   const run=chain.then(async()=>{
     for(let i=0;;i++){
-      const wait=lastAt+GAP-Date.now();if(wait>0)await sleep(wait);
-      lastAt=Date.now();
+      for(let w;(w=slotWait())>0;){
+        if(stale&&stale())throw STALE;
+        waitUntil=Date.now()+w;await sleep(Math.min(w,1000));
+      }
+      waitUntil=0;
+      if(stale&&stale())throw STALE;
+      markCall();
       const r=await fn();
-      if(r.status!==429||i>=3)return r;
+      if(r.status!==429||i>=1)return r;
       const ra=Number(r.headers.get("retry-after"));
-      await sleep(ra>0?ra*1000:1200*(i+1));
+      store.set("tdx_block",Date.now()+(ra>0?ra*1000:WINDOW));
     }
   });
-  chain=run.catch(()=>{});
+  chain=run.catch(()=>{waitUntil=0});
   return run;
 }
+/* 站序、路線起訖站這類靜態資料快取在 localStorage，7 天內不重抓 */
+function cacheGet(k,ttl){const c=store.get(k,null);return c&&Date.now()-c.t<ttl?c.v:null}
+function cacheSet(k,v){store.set(k,{t:Date.now(),v})}
 function tfetch(url,opt){
   const c=new AbortController(),t=setTimeout(()=>c.abort(),12000);
   return fetch(url,Object.assign({signal:c.signal},opt)).finally(()=>clearTimeout(t));
@@ -153,18 +180,18 @@ async function getToken(force){
   store.set("tdx_tok",{v:j.access_token,exp:Date.now()+(j.expires_in||3600)*1000});
   return j.access_token;
 }
-async function api(path,params,retry){
+async function api(path,params,stale,retry){
   if(isDemo())return demoApi(path,params||{});
   const qs=new URLSearchParams(Object.assign({"$format":"JSON"},params||{}));
   const tok=await getToken(retry);
-  const r=await queued(()=>tfetch(BASE+path+"?"+qs,{headers:{authorization:"Bearer "+tok}}));
-  if(r.status===401&&!retry)return api(path,params,true);
+  const r=await queued(()=>tfetch(BASE+path+"?"+qs,{headers:{authorization:"Bearer "+tok}}),stale);
+  if(r.status===401&&!retry)return api(path,params,stale,true);
   if(!r.ok){const e=new Error("http");e.status=r.status;throw e}
   return r.json();
 }
 function errText(e){
   if(e.status===401)return "金鑰驗證失敗。請到「設定」檢查 Client ID 與 Client Secret。";
-  if(e.status===429)return "呼叫次數超過 TDX 上限，下一輪會自動重試。";
+  if(e.status===429)return "TDX 回應呼叫太頻繁（免費方案每分鐘 5 次），下一輪會自動重試。";
   if(e.status)return "TDX 回應錯誤（HTTP "+e.status+"），下一輪會自動重試。";
   if(e.name==="AbortError")return "連線逾時（12 秒）。請檢查網路後再試。";
   return "連不上 TDX。若你是在聊天室的檔案預覽裡開啟，預覽環境會擋掉對外連線，請改用手機或電腦瀏覽器直接開啟檔案。";
@@ -195,73 +222,82 @@ const rank=e=>{const t=e&&e.EstimateTime;return (t!=null&&t>=0&&(e.StopStatus==n
 function better(a,b){return !a||rank(b)<rank(a)?b:a}
 
 /* ---------- 資料載入 ---------- */
-async function loadHome(){
+async function loadHome(stale){
   const rs=shownFavs().filter(f=>f.type==="rs");
   const out={};
   await Promise.all(CITIES.map(async([c])=>{
     const mine=rs.filter(f=>f.city===c);if(!mine.length)return;
     const filter=[...new Set(mine.map(f=>"StopUID eq '"+q1(f.stopUID)+"'"))].join(" or ");
-    const rows=await api("EstimatedTimeOfArrival/City/"+c,{"$filter":filter,"$top":"500"});
+    const rows=await api("EstimatedTimeOfArrival/City/"+c,{"$filter":filter,"$top":"500"},stale);
     for(const e of rows)for(const f of mine)
       if(e.StopUID===f.stopUID&&e.RouteUID===f.routeUID&&e.Direction===f.dir)out[favId(f)]=better(out[favId(f)],e);
   }));
   S.home=out;
 }
-async function loadRouteStatic(){
-  const {city,name}=S.route;
-  const rows=await api("StopOfRoute/City/"+city+"/"+encodeURIComponent(name),{"$filter":"RouteName/Zh_tw eq '"+q1(name)+"'"});
-  const byDir={};
-  for(const r of rows){
-    if(zh(r.RouteName)!==name)continue;
-    const cur=byDir[r.Direction];
-    if(!cur||r.Stops.length>cur.Stops.length)byDir[r.Direction]=r;
+async function loadRouteStatic(stale){
+  const {city,name}=S.route,key="sor|"+city+"|"+name;
+  let byDir=isDemo()?null:cacheGet(key,7*DAY);
+  if(!byDir){
+    const rows=await api("StopOfRoute/City/"+city+"/"+encodeURIComponent(name),{"$filter":"RouteName/Zh_tw eq '"+q1(name)+"'"},stale);
+    byDir={};
+    for(const r of rows){
+      if(zh(r.RouteName)!==name)continue;
+      const cur=byDir[r.Direction];
+      if(!cur||r.Stops.length>cur.Stops.length)
+        byDir[r.Direction]={RouteUID:r.RouteUID,Stops:r.Stops.map(s=>({StopUID:s.StopUID,StopName:{Zh_tw:zh(s.StopName)}}))};
+    }
+    if(!isDemo()&&Object.keys(byDir).length)cacheSet(key,byDir);
   }
   S.stops=byDir;
   const dirs=Object.keys(byDir).map(Number).sort();
   if(!dirs.includes(S.dir))S.dir=dirs.length?dirs[0]:0;
 }
-async function loadRouteLive(){
-  if(!S.stops)await loadRouteStatic();
+async function loadRouteLive(stale){
+  if(!S.stops)await loadRouteStatic(stale);
   const {city,name}=S.route,p={"$filter":"RouteName/Zh_tw eq '"+q1(name)+"'"};
   const path=city+"/"+encodeURIComponent(name);
   const [eta,near]=await Promise.all([
-    api("EstimatedTimeOfArrival/City/"+path,p),
-    api("RealTimeNearStop/City/"+path,p).catch(()=>[])
+    api("EstimatedTimeOfArrival/City/"+path,p,stale),
+    api("RealTimeNearStop/City/"+path,p,stale).catch(e=>{if(e===STALE)throw e;return []})
   ]);
   const m={},n={};
   for(const e of eta){const k=e.Direction+"|"+e.StopUID;m[k]=better(m[k],e)}
   for(const b of near){const k=b.Direction+"|"+b.StopUID;(n[k]=n[k]||[]).push(b)}
   S.eta=m;S.near=n;
 }
-async function loadStop(){
+async function loadStop(stale){
   const name=S.stopName,rows=[];
   await Promise.all(CITIES.map(async([c])=>{
-    const list=await api("EstimatedTimeOfArrival/City/"+c,{"$filter":"StopName/Zh_tw eq '"+q1(name)+"'","$top":"500"});
+    const list=await api("EstimatedTimeOfArrival/City/"+c,{"$filter":"StopName/Zh_tw eq '"+q1(name)+"'","$top":"500"},stale);
     const best={};
     for(const e of list){if(zh(e.StopName)!==name)continue;const k=e.RouteUID+"|"+e.Direction;best[k]=better(best[k],e)}
     const need=[...new Set(Object.values(best).map(e=>e.RouteUID))].filter(u=>!routeInfo[u]);
     for(let i=0;i<need.length;i+=25){
       const part=need.slice(i,i+25).map(u=>"RouteUID eq '"+q1(u)+"'").join(" or ");
-      const info=await api("Route/City/"+c,{"$filter":part,"$select":"RouteUID,RouteName,DepartureStopNameZh,DestinationStopNameZh"}).catch(()=>[]);
+      const info=await api("Route/City/"+c,{"$filter":part,"$select":"RouteUID,RouteName,DepartureStopNameZh,DestinationStopNameZh"},stale).catch(e=>{if(e===STALE)throw e;return []});
       for(const r of info)keepRoute(r,c);
     }
+    if(need.length)saveRoutes();
     for(const e of Object.values(best))rows.push({e,city:c});
   }));
   rows.sort((a,b)=>rank(a.e)-rank(b.e)||zh(a.e.RouteName).localeCompare(zh(b.e.RouteName),"zh-Hant",{numeric:true}));
   S.board=rows;
 }
-function keepRoute(r,c){routeInfo[r.RouteUID]={name:zh(r.RouteName),dep:r.DepartureStopNameZh||"",dest:r.DestinationStopNameZh||"",city:c}}
+function keepRoute(r,c){routeInfo[r.RouteUID]={name:zh(r.RouteName),dep:r.DepartureStopNameZh||"",dest:r.DestinationStopNameZh||"",city:c,t:Date.now()}}
+function saveRoutes(){if(!isDemo())store.set("route_info",routeInfo)}
 async function doSearch(){
   const q=S.q.trim();if(!q){S.results=null;return}
+  const stale=()=>S.view!=="search"||S.q.trim()!==q;
   const routes=[],stops=new Set();
   await Promise.all(CITIES.map(async([c])=>{
     const [rs,ss]=await Promise.all([
-      api("Route/City/"+c,{"$filter":"contains(RouteName/Zh_tw,'"+q1(q)+"')","$select":"RouteUID,RouteName,DepartureStopNameZh,DestinationStopNameZh","$top":"40"}),
-      api("Stop/City/"+c,{"$filter":"contains(StopName/Zh_tw,'"+q1(q)+"')","$select":"StopName","$top":"400"})
+      api("Route/City/"+c,{"$filter":"contains(RouteName/Zh_tw,'"+q1(q)+"')","$select":"RouteUID,RouteName,DepartureStopNameZh,DestinationStopNameZh","$top":"40"},stale),
+      api("Stop/City/"+c,{"$filter":"contains(StopName/Zh_tw,'"+q1(q)+"')","$select":"StopName","$top":"400"},stale)
     ]);
     for(const r of rs){keepRoute(r,c);routes.push({uid:r.RouteUID,name:zh(r.RouteName),dep:r.DepartureStopNameZh||"",dest:r.DestinationStopNameZh||"",city:c})}
     for(const s of ss)stops.add(zh(s.StopName));
   }));
+  saveRoutes();
   const seen=new Set();
   S.results={
     routes:routes.filter(r=>!seen.has(r.uid)&&seen.add(r.uid)).sort((a,b)=>a.name.length-b.name.length||a.name.localeCompare(b.name,"zh-Hant",{numeric:true})).slice(0,30),
@@ -287,11 +323,11 @@ function toggleFav(f){
 /* ---------- 更新循環 ---------- */
 let seq=0;
 async function refresh(){
-  const my=++seq;S.busy=true;S.left=REFRESH;
+  const my=++seq,stale=()=>my!==seq;S.busy=true;S.left=REFRESH;
   try{
-    if(S.view==="home")await loadHome();
-    else if(S.view==="route")await loadRouteLive();
-    else if(S.view==="stop")await loadStop();
+    if(S.view==="home")await loadHome(stale);
+    else if(S.view==="route")await loadRouteLive(stale);
+    else if(S.view==="stop")await loadStop(stale);
     if(my!==seq)return;
     S.err="";S.updated=new Date();
   }catch(e){if(my!==seq)return;S.err=errText(e)}
@@ -299,7 +335,8 @@ async function refresh(){
 }
 const live=()=>S.view==="home"||S.view==="route"||S.view==="stop";
 setInterval(()=>{
-  if(document.hidden||!live())return;
+  const wt=$("wait");if(wt)wt.textContent=waitUntil>Date.now()?"等待 TDX 配額 "+Math.ceil((waitUntil-Date.now())/1000)+" 秒":"";
+  if(document.hidden||!live()||S.busy)return;
   S.left--;
   const bar=$("prog");if(bar)bar.style.width=Math.max(0,S.left/REFRESH*100)+"%";
   if(S.left<=0)refresh();
@@ -326,10 +363,12 @@ function render(){
     '<h1>'+esc(title)+(sub?"<small>"+esc(sub)+"</small>":"")+"</h1>"+
     (S.view==="stop"?starBtn({type:"st",name:S.stopName}):"")+"</div>";
   if(live())h+='<div class="meta"><span>'+(S.updated?"更新於 "+hm(S.updated)+":"+p2(S.updated.getSeconds()):"載入中")+
-    '</span><span>每 '+REFRESH+' 秒自動更新</span></div><div class="prog"><i id="prog" style="width:'+(S.left/REFRESH*100)+'%"></i></div>';
+    '</span><span id="wait" style="color:var(--soon)"></span><span>每 '+REFRESH+' 秒自動更新</span></div><div class="prog"><i id="prog" style="width:'+(S.left/REFRESH*100)+'%"></i></div>';
   $("head").innerHTML=h;
   let m="";
   if(isDemo()&&S.view!=="settings")m+='<div class="demo">目前顯示的是示範資料，不是真實到站時間。<button data-act="tab" data-v="settings">填入 TDX 金鑰</button>後才會連線。</div>';
+  const used=usage().n;
+  if(!isDemo()&&used>=MONTH_FREE*0.8)m+='<div class="demo">本月這台裝置已呼叫 TDX '+used+' 次，接近免費額度（約 '+MONTH_FREE.toLocaleString()+' 次）。用量超過 105% 時，TDX 會停用帳號到月底。</div>';
   if(S.err)m+='<div class="err" role="alert">'+esc(S.err)+"</div>";
   m+=({home:vHome,search:vSearch,route:vRoute,stop:vStop,settings:vSettings})[S.view]();
   $("main").innerHTML=m;
@@ -367,7 +406,7 @@ function vHome(){
 }
 function vSearch(){
   let h='<div class="search" id="sf"><input id="q" type="search" inputmode="search" autocomplete="off" placeholder="例如 307、捷運公館站" aria-label="路線或站牌名稱" value="'+esc(S.q)+'"><button type="button" class="btn" data-act="search">搜尋</button></div>';
-  if(S.busy)return h+'<div class="empty">搜尋中</div>';
+  if(S.busy)return h+'<div class="empty">搜尋中 <span id="wait"></span></div>';
   const r=S.results;
   if(!r)return h+'<div class="empty">輸入路線號碼或站牌名稱的一部分即可。</div>';
   if(!r.routes.length&&!r.stops.length)return h+'<div class="empty">找不到符合「'+esc(S.q)+'」的路線或站牌，換個關鍵字試試。</div>';
@@ -422,6 +461,8 @@ function vSettings(){
     '<div class="acts"><button type="button" class="btn" data-act="save">儲存並測試連線</button>'+(cred?'<button type="button" class="btn ghost" data-act="clear">清除金鑰</button>':"")+"</div>"+
     (S.msg?'<div class="'+(S.msgOk?"demo":"err")+'" role="status">'+esc(S.msg)+"</div>":"")+
     '<div style="font-size:13px;color:var(--muted)">金鑰只存在這台裝置的瀏覽器裡，並且只會送往 tdx.transportdata.tw。</div></div>'+
+    '<div class="card"><b>本月用量</b><div style="font-size:14px">這台裝置本月已呼叫 TDX <b style="display:inline">'+usage().n+'</b> 次。</div>'+
+    '<div style="font-size:13px;color:var(--muted)">免費的基礎會員每分鐘最多 5 次、每月約 '+MONTH_FREE.toLocaleString()+' 次（3 點，每 1,500 次折 1 點），所有裝置與金鑰合計。用量超過 105% 時，TDX 會停用帳號到月底。實際用量以 TDX 會員中心的「使用統計」為準。</div></div>'+
     '<div class="card"><b>如何取得 TDX 金鑰（免費）</b><ol>'+
     '<li>到 <a href="https://tdx.transportdata.tw/register" target="_blank" rel="noopener">tdx.transportdata.tw/register</a> 註冊會員並完成 Email 驗證。</li>'+
     "<li>等待帳號審核通過後登入。</li>"+
@@ -453,7 +494,7 @@ document.addEventListener("keydown",ev=>{
 async function doAction(kind){
   if(kind==="search"){
     S.q=$("q").value;S.busy=true;S.err="";render();
-    try{await doSearch()}catch(e){S.err=errText(e)}
+    try{await doSearch()}catch(e){if(e!==STALE)S.err=errText(e)}
     S.busy=false;render();
   }else if(kind==="save"){
     const id=$("cid").value.trim(),secret=$("csec").value.trim();
