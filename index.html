@@ -331,6 +331,7 @@ async function loadRouteStatic(stale){
     if(!isDemo()&&Object.keys(byDir).length)cacheSet(key,byDir);
   }
   S.stops=byDir;
+  if(!isDemo())backfillFromRoute(city,name,byDir);
   const dirs=Object.keys(byDir).map(Number).sort();
   if(!dirs.includes(S.dir))S.dir=dirs.length?dirs[0]:0;
 }
@@ -426,6 +427,7 @@ async function doSearch(){
       if(p){const a=stopPosByName[n]=stopPosByName[n]||[];if(!a.some(x=>x[0]===p[0]&&x[1]===p[1]))a.push(p)}
     }
   }));
+  if(!isDemo()&&backfillStops(stopPosByName))store.set("bus_favs",favs);
   const seen=new Set();
   S.results={
     routes:routes.filter(r=>!seen.has(r.uid)&&seen.add(r.uid)).sort((a,b)=>a.name.length-b.name.length||a.name.localeCompare(b.name,"zh-Hant",{numeric:true})).slice(0,30),
@@ -446,6 +448,42 @@ function toggleFav(f){
   const id=favId(f);
   favs=isFav(id)?favs.filter(x=>favId(x)!==id):favs.concat([f]);
   store.set("bus_favs",favs);
+}
+/* 舊收藏補座標：2026-11-17 之前收藏的項目沒有存位置，常用頁地圖上看不到。
+   用已經拿到的資料補上（路線站序、搜尋或附近站牌帶回的站牌座標），不另外呼叫 API。 */
+const samePos=(a,b)=>a[0]===b[0]&&a[1]===b[1];
+function backfillStops(byName){
+  let n=0;
+  for(const f of favs){
+    if(f.type!=="st"||!byName[f.name])continue;
+    const a=f.pos=f.pos||[];
+    for(const p of byName[f.name])if(!a.some(x=>samePos(x,p))){a.push(p);n++}
+  }
+  return n;
+}
+function backfillFromRoute(city,name,byDir){
+  let n=0;const byName={};
+  for(const d in byDir)for(const s of byDir[d].Stops)if(s.pos){
+    const k=zh(s.StopName),a=byName[k]=byName[k]||[];if(!a.some(x=>samePos(x,s.pos)))a.push(s.pos);
+  }
+  for(const f of favs){
+    if(f.type!=="rs"||f.pos||f.city!==city||f.route!==name)continue;
+    const s=byDir[f.dir]&&byDir[f.dir].Stops.find(x=>x.StopUID===f.stopUID);
+    if(s&&s.pos){f.pos=s.pos;n++}
+  }
+  n+=backfillStops(byName);
+  if(n)store.set("bus_favs",favs);
+  return n;
+}
+/* 啟動時先用快取裡的站序補（7 天內開過的路線），完全不花額度 */
+function backfillFromCache(){
+  const done=new Set();
+  for(const f of favs){
+    if(f.type!=="rs"||f.pos)continue;
+    const k=f.city+"|"+f.route;if(done.has(k))continue;done.add(k);
+    const byDir=cacheGet("sor2|"+k,7*DAY);
+    if(byDir)backfillFromRoute(f.city,f.route,byDir);
+  }
 }
 
 /* ---------- 更新循環 ---------- */
@@ -785,6 +823,7 @@ async function findNearby(){
         const a=stopPosByName[n]=stopPosByName[n]||[];if(!a.some(x=>x[0]===p[0]&&x[1]===p[1]))a.push(p);
       }
     }));
+    if(!isDemo()&&backfillStops(stopPosByName))store.set("bus_favs",favs);
     S.results={routes:[],stops:Object.keys(near).sort((a,b)=>near[a]-near[b]).slice(0,30),dist:near,nearby:true};
   }catch(e){if(e!==STALE){if(e&&(e.code||e.message==="unsupported"))locErr(e);else S.err=errText(e)}}
   S.busy=false;render();
@@ -929,6 +968,7 @@ function demoApi(path,p){
 /* PWA：加入主畫面後可離線開啟介面。只在 https 或 localhost 註冊 */
 if("serviceWorker" in navigator&&(location.protocol==="https:"||location.hostname==="localhost"||location.hostname==="127.0.0.1"))
   addEventListener("load",()=>navigator.serviceWorker.register("sw.js").catch(()=>{}));
+if(!isDemo())backfillFromCache();
 initMap();setSheet(S.sheet);
 (function(){
   const [v,p]=fromHash(location.hash);   // 無效的 hash 會落回首頁，網址也一併改正
