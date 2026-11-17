@@ -124,7 +124,7 @@ nav{z-index:20}
 .row.pick{cursor:pointer}
 .row.sel{background:color-mix(in srgb,var(--accent) 14%,transparent);box-shadow:inset 3px 0 0 var(--accent)}
 .bus{position:relative}
-.bus i{position:absolute;left:-9px;top:-9px;width:18px;height:18px;border-radius:50%;background:var(--now);border:3px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.4)}
+.bus i{position:absolute;left:-9px;top:-9px;width:18px;height:18px;border-radius:50%;background:var(--ink);border:3px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.4)}
 .bus em{position:absolute;left:0;top:13px;transform:translateX(-50%);white-space:nowrap;font:700 11px/1 var(--f-num);font-style:normal;background:var(--ink);color:var(--bg);padding:3px 5px;border-radius:5px}
 .leaflet-tooltip{font:500 12px var(--f-body)}
 .leaflet-container{font-family:var(--f-body)}
@@ -163,6 +163,17 @@ nav{z-index:20}
 .gpick button[aria-pressed="true"]{background:var(--accent);border-color:var(--accent);color:var(--accent-ink);font-weight:700}
 .rm{flex:0 0 44px;height:44px;border-radius:10px;color:var(--now);font-size:20px}
 .hint{font-size:13px;color:var(--muted)}
+/* 路線條（參考 Bus+）：每列左側一段直線串起整條路線，站是圓點；
+   公車「進站中」畫在該站圓點上，「已離站」畫在這一站與下一站之間（列的下緣）。 */
+.strip{position:relative;flex:0 0 14px;align-self:stretch;margin:-10px 0 -10px -4px}
+.strip .ln{position:absolute;left:5px;width:4px;top:0;bottom:0;border-radius:2px;background:var(--rc,var(--accent))}
+.strip.first .ln{top:50%}.strip.last .ln{bottom:50%}
+.strip .st{position:absolute;left:1px;top:50%;width:12px;height:12px;margin-top:-6px;border-radius:50%;background:var(--surface);border:3px solid var(--rc,var(--accent))}
+.row.sel .strip .st{background:var(--rc,var(--accent))}
+/* 公車用文字色（深色模式白、淺色模式深），不用紅色：紅色路線的線條也是紅的，會分不出車 */
+.strip .bus{position:absolute;left:-2px;width:18px;height:18px;border-radius:50%;background:var(--ink);border:3px solid var(--surface);z-index:2;box-shadow:0 1px 3px rgba(0,0,0,.35)}
+.strip .bus.at{top:50%;margin-top:-9px}
+.strip .bus.gone{bottom:0;margin-bottom:-9px}
 @media (min-width:1024px){
   nav{left:16px;right:auto;top:16px;bottom:auto;width:408px;border:1px solid var(--line);border-radius:14px;padding:0;overflow:hidden}
   nav button{min-height:44px}
@@ -322,6 +333,14 @@ function fmt(e){
 }
 const p2=n=>String(n).padStart(2,"0");
 const hm=d=>p2(d.getHours())+":"+p2(d.getMinutes());
+/* 路線家族配色（參考 Transit 的路線色）：台北的紅、藍、棕、綠、橘、小字頭路線用對應顏色，數字路線維持主色。
+   每個顏色在淺色與深色背景上的文字對比都在 4.5:1 以上。 */
+const FAM=[[/^紅/,"#c62f25","#ff7b70"],[/^藍/,"#1f5fc8","#7fabff"],[/^棕/,"#8a5426","#d9a06e"],[/^綠/,"#1f7a3c","#6fd08c"],[/^橘/,"#b0520f","#ffa457"],[/^小/,"#6a4cc0","#b9a2ff"]];
+function famColor(name){
+  const m=FAM.find(f=>f[0].test(String(name||"")));
+  return m?m[matchMedia("(prefers-color-scheme:dark)").matches?2:1]:null;
+}
+const rcStyle=name=>{const c=famColor(name);return c?' style="--rc:'+c+';color:'+c+'"':""};
 const LIVE_ICON='<svg class="live" viewBox="0 0 12 12" aria-hidden="true"><circle cx="2" cy="10" r="1.6" fill="currentColor"/><path d="M2 6.2a3.8 3.8 0 0 1 3.8 3.8M2 2.4A7.6 7.6 0 0 1 9.6 10" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>';
 const etaLabel=f=>f.live?"即時預估：":f.cls==="sched"?"表定推算：":"";
 const etaBox=e=>{const f=fmt(e);
@@ -606,7 +625,7 @@ function render(){
   if(S.view==="search")title="搜尋路線或站牌";
   if(S.view==="settings")title="設定";
   let h='<div class="bar">'+(back?'<button class="back" data-act="back" aria-label="返回">←</button>':"")+
-    '<h1>'+esc(title)+(sub?"<small>"+esc(sub)+"</small>":"")+"</h1>"+
+    '<h1'+(S.view==="route"?rcStyle(S.route.name):"")+'>'+esc(title)+(sub?"<small>"+esc(sub)+"</small>":"")+"</h1>"+
     (S.view==="stop"?starBtn({type:"st",name:S.stopName,pos:S.stopPos.length?S.stopPos:undefined}):"")+"</div>";
   if(S.view==="route"&&S.pick&&S.stops&&S.stops[S.dir]){
     const s=S.stops[S.dir].Stops.find(x=>x.StopUID===S.pick);
@@ -673,7 +692,7 @@ function vHome(){
     for(const f of sorted){
       const e=S.home[favId(f)];
       h+='<button class="row" data-act="route" data-city="'+esc(f.city)+'" data-name="'+esc(f.route)+'" data-dir="'+f.dir+'" data-uid="'+esc(f.stopUID)+'">'+etaBox(e)+
-        '<div class="body"><b><span class="rt" style="display:inline;color:inherit">'+esc(f.route)+"</span>　"+esc(f.stopName)+"</b><span>往 "+esc(f.toward)+"</span>"+tags(e)+"</div></button>";
+        '<div class="body"><b><span class="rt"'+(famColor(f.route)?' style="display:inline;color:'+famColor(f.route)+'"':' style="display:inline;color:inherit"')+'>'+esc(f.route)+"</span>　"+esc(f.stopName)+"</b><span>往 "+esc(f.toward)+"</span>"+tags(e)+"</div></button>";
     }
     h+="</div>";
   }
@@ -694,7 +713,7 @@ function vSearch(){
   if(!r.routes.length&&!r.stops.length)return h+'<div class="empty">找不到符合「'+esc(S.q)+'」的路線或站牌，換個關鍵字試試。</div>';
   if(r.routes.length){
     h+='<div class="sec">路線</div><div class="list">';
-    for(const x of r.routes)h+='<button class="row" data-act="route" data-city="'+x.city+'" data-name="'+esc(x.name)+'"><div class="body"><b class="rt">'+esc(x.name)+"</b><span>"+esc(x.dep)+" ↔ "+esc(x.dest)+"・"+CITY_NAME[x.city]+'</span></div><span aria-hidden="true">›</span></button>';
+    for(const x of r.routes)h+='<button class="row" data-act="route" data-city="'+x.city+'" data-name="'+esc(x.name)+'"><div class="body"><b class="rt"'+rcStyle(x.name)+'>'+esc(x.name)+"</b><span>"+esc(x.dep)+" ↔ "+esc(x.dest)+"・"+CITY_NAME[x.city]+'</span></div><span aria-hidden="true">›</span></button>';
     h+="</div>";
   }
   if(r.stops.length){
@@ -716,14 +735,17 @@ function vRoute(){
     for(const d of dirs)h+='<button data-act="dir" data-d="'+d+'" aria-pressed="'+(d===S.dir)+'">往 '+esc(toward(d))+"</button>";
     h+="</div>";
   }
-  const cur=S.stops[S.dir],tw=toward(S.dir);
-  h+='<div class="list">';
-  for(const s of cur.Stops){
-    const k=S.dir+"|"+s.StopUID,e=S.eta[k];
+  const cur=S.stops[S.dir],tw=toward(S.dir),n=cur.Stops.length;
+  h+='<div class="list"'+rcStyle(S.route.name).replace(/;color:[^"]*/,"")+'>';
+  cur.Stops.forEach((s,i)=>{
+    const k=S.dir+"|"+s.StopUID,e=S.eta[k],buses=S.near[k]||[];
+    const at=buses.filter(b=>b.A2EventType!==0),gone=i<n-1?buses.filter(b=>b.A2EventType===0):[];
+    const strip='<span class="strip'+(i===0?" first":"")+(i===n-1?" last":"")+'" aria-hidden="true"><span class="ln"></span><span class="st"></span>'+
+      (at.length?'<span class="bus at"></span>':"")+(gone.length?'<span class="bus gone"></span>':"")+"</span>";
     const f={type:"rs",city:S.route.city,route:S.route.name,routeUID:cur.RouteUID,dir:S.dir,stopUID:s.StopUID,stopName:zh(s.StopName),toward:tw,pos:s.pos};
     const sel=S.pick===s.StopUID;
-    h+='<div class="row pick'+(sel?" sel":"")+'" data-act="pick" data-uid="'+esc(s.StopUID)+'" tabindex="0" role="button" aria-pressed="'+sel+'" aria-label="'+esc(zh(s.StopName))+'，在地圖上顯示">'+etaBox(e)+'<div class="body"><b>'+esc(zh(s.StopName))+"</b>"+tags(e,S.near[k])+"</div>"+starBtn(f)+"</div>";
-  }
+    h+='<div class="row pick'+(sel?" sel":"")+'" data-act="pick" data-uid="'+esc(s.StopUID)+'" tabindex="0" role="button" aria-pressed="'+sel+'" aria-label="'+esc(zh(s.StopName))+'，在地圖上顯示">'+etaBox(e)+strip+'<div class="body"><b>'+esc(zh(s.StopName))+"</b>"+tags(e,S.near[k])+"</div>"+starBtn(f)+"</div>";
+  });
   return h+"</div>";
 }
 function vStop(){
@@ -734,7 +756,7 @@ function vStop(){
     const info=routeInfo[e.RouteUID],name=zh(e.RouteName);
     const tw=info?(e.Direction===1?info.dep:info.dest):"";
     h+='<button class="row" data-act="route" data-city="'+city+'" data-name="'+esc(name)+'" data-dir="'+e.Direction+'">'+etaBox(e)+
-      '<div class="body"><b class="rt">'+esc(name)+"</b><span>"+(tw?"往 "+esc(tw):(e.Direction===1?"返程":"去程"))+"</span>"+tags(e)+'</div><span aria-hidden="true">›</span></button>';
+      '<div class="body"><b class="rt"'+rcStyle(name)+'>'+esc(name)+"</b><span>"+(tw?"往 "+esc(tw):(e.Direction===1?"返程":"去程"))+"</span>"+tags(e)+'</div><span aria-hidden="true">›</span></button>';
   }
   return h+"</div>";
 }
@@ -842,7 +864,7 @@ function initMap(){
   const attr=L.control.attribution({prefix:'<a href="https://leafletjs.com" target="_blank" rel="noopener">Leaflet</a>'}).addTo(map);
   const place=()=>attr.setPosition(WIDE.matches?"bottomright":"topleft");place();WIDE.addEventListener("change",place);
   lay=L.layerGroup().addTo(map);
-  const dark=()=>$("map").classList.toggle("map-dark",DARK.matches);dark();DARK.addEventListener("change",()=>{dark();drawMap()});
+  const dark=()=>$("map").classList.toggle("map-dark",DARK.matches);dark();DARK.addEventListener("change",()=>{dark();render()});
   WIDE.addEventListener("change",()=>{fitKey="";map.invalidateSize();drawMap()});
 }
 /* ---------- 定位 ----------
@@ -928,7 +950,8 @@ function drawMap(){
     const cur=S.stops[S.dir],pts=cur.Stops.filter(s=>s.pos);
     const shape=S.shape&&(S.shape[S.dir]||S.shape.any);
     const lines=shape&&shape.length?shape:[pts.map(s=>s.pos)];
-    for(const l of lines)L.polyline(l,{color:css("--accent"),weight:6,opacity:.85,interactive:false}).addTo(lay);
+    const lc=famColor(S.route.name)||css("--accent");
+    for(const l of lines)L.polyline(l,{color:lc,weight:6,opacity:.85,interactive:false}).addTo(lay);
     for(const s of pts)dot(s.pos,S.pick===s.StopUID,esc(zh(s.StopName)),()=>pickStop(s.StopUID,"map"));
     for(const s of pts)for(const b of S.near[S.dir+"|"+s.StopUID]||[])
       L.marker(s.pos,{keyboard:false,icon:L.divIcon({className:"bus",html:"<i></i><em>"+esc(b.PlateNumb)+"</em>",iconSize:[0,0]}),zIndexOffset:500}).addTo(lay);
