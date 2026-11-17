@@ -11,6 +11,9 @@
 - `index.html`：整個看板，單一檔案（HTML、CSS、JS 都在裡面），沒有建置步驟。原檔名是 `bus-board.html`。
 - `manifest.webmanifest`、`icon.svg`、`icons/icon-{180,192,512}.png`：PWA 名稱與圖示。PNG 由 `icon.svg` 用 `sips -s format png -z N N icon.svg --out icons/icon-N.png` 產生，改圖示時三個尺寸要一起重產
 - `sw.js`：service worker（2026-11-18 加入）。導覽請求 network-first，失敗時回快取的 `./`；同源 png/svg/webmanifest 與 Leaflet CDN cache-first；NLSC 圖磚 stale-while-revalidate、上限 400 張；TDX 與 Google Fonts 不攔截。改快取清單或策略時把 `VERSION` 加一。圖磚以 `crossOrigin:"anonymous"` 請求（NLSC 有 CORS），避免 opaque 回應灌水占用儲存配額
+- `tests/index.html`：瀏覽器自動化測試，25 項，約 7 秒。改完 `index.html` 後用本機伺服器開 `tests/` 跑一次（`python3 -m http.server` 後開 `/tests/`）。`?grep=` 篩選、`?app=` 指定別的看板檔（相對於 tests/，做突變測試用）。測試環境注入在看板 `<head>` 最前面：記憶體版 localStorage（不碰真實資料，最後一項會比對前後）、模擬 TDX（`ENV()` 內的 ROUTES／站序／ETA）、假定位、固定時段。不要在測試裡呼叫真正的 `history.back()`：瀏覽器把外層與所有 iframe（包括已移除的）的紀錄串在一起，退過頭會把測試頁本身導走；改用 `__pushes` 檢查 pushState，並用 popstate 事件模擬上一頁。也不要用 `history.length` 判斷（上限 50）
+- `tests/sw.test.mjs`：`node tests/sw.test.mjs`，在 Node 模擬 caches／fetch 測 sw.js 的 9 項策略；可傳入別的 sw 檔路徑做突變測試。改 sw.js 的快取清單時要同步更新預期數字
+- 新增功能時，在 `tests/index.html` 補對應測試；修 bug 時先補一個會失敗的測試
 - `README.md`：給使用者與訪客看的說明（功能、取得金鑰、隱私、技術說明）。功能或端點有變動時要一起更新。
 - `drafts/`：設計草案與 designforge 紀錄（`2026-11-17--nextstop-map.md`），已在 `.gitignore`，不進 repo。
 
@@ -64,6 +67,7 @@
 - 用 jsdom 模擬測過所有畫面、按鈕、收藏、搜尋，以及模擬的 429 情境
 - 2026-11-17 使用者實測：第一次查路線要等 60 秒配額。原因是搜尋每次花 4 次（路線＋站牌 × 2 城市），再開路線 3 次就超過。改成本機路線清單後，模擬測試：首次使用搜尋 2 次、開路線 3 次，資料 1.6 秒顯示；之後搜尋 0 次、開路線 2 到 3 次
 - 2026-11-17 UI/UX 審視後修正：列表壓扁（手機 8 站只顯示 151/525px、桌面 60 站只顯示 545/3905px）、深色「進站中」對比 2.3:1、換頁不寫瀏覽紀錄。修正後實測：列表完整高度、滑鼠滾輪可捲、深色「進站中」8.0:1、動畫中 opacity 固定 1、返回鍵與 history.back 正確回上一頁、深層連結可直接開啟、無效網址改正為 #home
+- 2026-11-18 自動化測試：`tests/index.html` 25 項在深色與淺色模式都通過；`tests/sw.test.mjs` 9 項通過。突變測試：故意改壞 8 處（拿掉 flex-shrink、PER_MIN 改 6、取消表定判斷、pushState 改 replaceState、深色進站中改白字、上班／回家時段對調、不畫已離站公車、數字搜尋也查站牌）都被測試抓到；sw.js 改壞 2 處（圖磚上限、攔截 TDX）也都被抓到
 - 2026-11-18 路線條與配色模擬測試：「紅30」標題、路線條、地圖線都是深色紅 #ff7b70；307 維持主色；進站中的車在第 2 站點上、已離站的車在第 4、5 站之間；深淺色截圖確認公車點可辨識（第一版用紅色公車點，在紅色路線上分不出來，已改為文字色）；375px 無水平溢位
 - 2026-11-18 三項吸收功能模擬測試：分組後「上班」只顯示西門站、「回家」只顯示南京敦化路口、地圖跟著分頁；時段 7、11 點 → 上班，12、14 點 → 全部，16、22 點 → 回家，上班組清空時退回全部；表定項目 aria-label「表定推算：12 分鐘」、虛線框，即時項目有訊號圖示；307 切到回程後從搜尋再進入維持回程；編輯列在 320px 寬名稱一行、按鈕 67×44、無水平溢位
 - 2026-11-18 舊收藏補座標模擬測試：沒有 pos 的 `rs` 與 `st` 收藏，開 262 後都補上座標、首頁地圖 0 → 2 個點、沒有額外 API 呼叫；清掉座標後重新載入，啟動時從快取補回

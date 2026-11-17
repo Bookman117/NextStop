@@ -65,7 +65,14 @@
 
 - `index.html`：整個看板（HTML、CSS、JavaScript）。
 - `manifest.webmanifest`、`icon.svg`、`icons/`：加入主畫面用的名稱與圖示。
+- `tests/`：自動化測試（見上方「測試」）。
 - `sw.js`：service worker。頁面先抓網路、離線時用快取；Leaflet 與圖示用快取；地圖圖磚最多快取 400 張；TDX API 不經過快取。
+
+## 測試
+
+- **看板功能**：用瀏覽器開啟 `tests/`（本機或線上的 https://bookman117.github.io/NextStop/tests/ 都可以），會自動跑完 25 項測試並列出結果。每個測試都在 iframe 裡載入一份全新的看板，TDX 換成模擬資料，localStorage 換成記憶體版本，不會動到你真正的金鑰與收藏。網址加 `?grep=關鍵字` 可以只跑部分測試。
+- **Service worker**：`node tests/sw.test.mjs`（需要 Node 18 以上），在 Node 模擬瀏覽器環境測 9 項快取策略。
+- 涵蓋：示範模式、搜尋與額度、路線頁狀態（即時／表定／末班）、路線條與公車位置、線形、家族配色與對比、每分鐘 5 次節流、取消舊請求、429、網址與返回、深層連結、方向記憶、常用分組與編輯、補座標、列表不被壓扁、定位與附近站牌、進站中對比、320px 寬度、解析器、Leaflet 失敗退路，以及測試本身不動到真實資料。
 
 ## 本機開發
 

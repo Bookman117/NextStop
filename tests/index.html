@@ -1,0 +1,418 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>NextStop 測試</title>
+<style>
+:root{color-scheme:light dark;--ok:#1f7a3c;--bad:#c62f25;--muted:#5d6f7c}
+@media (prefers-color-scheme:dark){:root{--ok:#6fd08c;--bad:#ff7b70;--muted:#93a4b0}}
+body{font:15px/1.5 "Noto Sans TC","PingFang TC",system-ui,sans-serif;margin:0 auto;max-width:860px;padding:16px}
+h1{font-size:20px;margin:0 0 4px}
+p{margin:4px 0 12px;color:var(--muted)}
+#sum{font-weight:700;font-size:17px;color:inherit}
+ol{padding-left:24px}
+li{margin:4px 0}
+li.pass::marker{color:var(--ok)}li.fail::marker{color:var(--bad)}
+li .st{font-weight:700;margin-right:6px}
+li.pass .st{color:var(--ok)}li.fail .st{color:var(--bad)}
+li .why{display:block;color:var(--bad);font-size:13px;white-space:pre-wrap}
+li .ms{color:var(--muted);font-size:12px;margin-left:6px}
+#stage iframe{border:1px solid #8884;margin-top:12px}
+</style>
+</head>
+<body>
+<h1>NextStop 自動化測試</h1>
+<p>每個測試都在 iframe 裡載入一份全新的看板，TDX 換成模擬資料，localStorage 換成記憶體版本，不會讀寫你真正的金鑰與收藏。網址加 <code>?grep=關鍵字</code> 只跑名稱符合的測試。</p>
+<div id="sum">執行中…</div>
+<ol id="list"></ol>
+<pre id="result" hidden></pre>
+<div id="stage"></div>
+<script>
+"use strict";
+/* ================= 注入看板 iframe 的測試環境 =================
+   這個函式會被轉成字串，放在看板 <head> 的最前面執行（早於看板本身的程式）。 */
+function ENV(opt){
+  /* 1. 記憶體版 localStorage：與真實資料完全隔離 */
+  const mem=Object.assign({},opt.storage||{});
+  const ls={getItem:k=>Object.prototype.hasOwnProperty.call(mem,k)?mem[k]:null,setItem:(k,v)=>{mem[k]=String(v)},
+    removeItem:k=>{delete mem[k]},clear:()=>{for(const k in mem)delete mem[k]},key:i=>Object.keys(mem)[i]||null,get length(){return Object.keys(mem).length}};
+  Object.defineProperty(window,"localStorage",{value:ls,configurable:true});
+  window.__mem=mem;
+  /* 2. 不註冊 service worker */
+  Object.defineProperty(navigator,"serviceWorker",{value:{register:()=>Promise.resolve()},configurable:true});
+  /* 3. 起始網址；記錄 pushState，測試用來確認換頁有寫入瀏覽紀錄 */
+  history.replaceState(null,"",location.pathname+(opt.hash||""));
+  const push=history.pushState.bind(history);window.__pushes=[];
+  history.pushState=(st,t,u)=>{window.__pushes.push(String(u));return push(st,t,u)};
+  /* 4. 時間（分組依時段） */
+  if(opt.hour!=null)Date.prototype.getHours=function(){return opt.hour};
+  /* 5. 定位 */
+  if(opt.geo)Object.defineProperty(navigator,"geolocation",{value:{getCurrentPosition:(ok,no)=>setTimeout(()=>
+    opt.geo==="deny"?no({code:1,message:"denied"}):ok({coords:{latitude:opt.geo[0],longitude:opt.geo[1],accuracy:20}}),20)},configurable:true});
+  /* 6. 模擬 TDX */
+  const ROAD=[[25.0466,121.5110],[25.0468,121.5135],[25.0470,121.5160],[25.0476,121.5172],[25.0474,121.5190],[25.0451,121.5195],
+    [25.0425,121.5197],[25.0400,121.5199],[25.0378,121.5201],[25.0360,121.5215],[25.0352,121.5240]];
+  const NAMES=["北門","臺北車站(忠孝)","臺大醫院","中正紀念堂","東門","信義永康街口"];
+  const IDX=[0,2,4,6,8,10];
+  const stops=(rev)=>{const a=IDX.map((k,i)=>({StopUID:"S"+i,StopName:{Zh_tw:NAMES[i]},StopSequence:i+1,
+    StopPosition:{PositionLat:ROAD[k][0],PositionLon:ROAD[k][1]}}));return rev?a.slice().reverse().map((s,i)=>Object.assign({},s,{StopUID:"R"+s.StopUID})):a};
+  const ROUTES={Taipei:[["TPE262","262","宏國德霖科技大學","塔悠疏散門"],["TPER30","紅30","捷運劍潭站","捷運公館站"]].concat(
+      Array.from({length:150},(_,i)=>["TPEX"+i,String(500+i),"甲","乙"])),
+    NewTaipei:[["NWT262","262","新北甲站","新北乙站"]]};
+  const etaRows=(route,uid)=>stops(false).map((s,i)=>Object.assign({RouteUID:uid,RouteName:{Zh_tw:route},Direction:0,StopUID:s.StopUID,StopName:s.StopName},
+    [{StopStatus:0,EstimateTime:30},{StopStatus:0,EstimateTime:150},{StopStatus:1,EstimateTime:720},{StopStatus:0,EstimateTime:400},
+     {StopStatus:3,EstimateTime:null},{StopStatus:0,EstimateTime:900,IsLastBus:true}][i]));
+  const J=(o,status)=>new Response(JSON.stringify(o),{status:status||200,headers:{"content-type":"application/json"}});
+  window.__calls=[];
+  const srv=[];
+  window.fetch=async(url,init)=>{
+    url=String(url);
+    if(url.includes("/token"))return J({access_token:"tok",expires_in:3600});
+    if(!url.includes("tdx.transportdata.tw"))return opt.realFetch?opt.realFetch(url,init):J({});
+    const u=new URL(url),path=decodeURIComponent(u.pathname.split("/Bus/")[1]||""),p=Object.fromEntries(u.searchParams);
+    const parts=path.split("/"),kind=parts[0],city=parts[2],route=parts[3];
+    const now=Date.now();while(srv.length&&now-srv[0]>60000)srv.shift();
+    if(opt.limit!=null&&srv.length>=opt.limit){window.__calls.push({kind,city,route,p,status:429});return J({message:"rate"},429)}
+    srv.push(now);window.__calls.push({kind,city,route,p,status:200});
+    const f=p.$filter||"";
+    if(kind==="Route")return J((ROUTES[city]||[]).map(r=>({RouteUID:r[0],RouteName:{Zh_tw:r[1]},DepartureStopNameZh:r[2],DestinationStopNameZh:r[3]})));
+    if(kind==="Stop"){
+      const kw=(f.match(/contains\([^,]+,'(.*)'\)/)||[])[1];
+      const box=f.match(/PositionLat ge ([\d.]+) and .*PositionLat le ([\d.]+) and .*PositionLon ge ([\d.]+) and .*PositionLon le ([\d.]+)/);
+      return J(city!=="Taipei"?[]:stops(false).filter(s=>kw?s.StopName.Zh_tw.includes(kw):box?
+        s.StopPosition.PositionLat>=+box[1]&&s.StopPosition.PositionLat<=+box[2]&&s.StopPosition.PositionLon>=+box[3]&&s.StopPosition.PositionLon<=+box[4]:true)
+        .map(s=>({StopName:s.StopName,StopPosition:s.StopPosition})));
+    }
+    if(!route&&kind==="EstimatedTimeOfArrival"){   /* 站牌看板或首頁：依 StopName 或 StopUID 過濾 */
+      const all=city==="Taipei"?etaRows("262","TPE262").concat(etaRows("紅30","TPER30")):[];
+      const name=(f.match(/StopName\/Zh_tw eq '(.*)'/)||[])[1],uids=[...f.matchAll(/StopUID eq '([^']+)'/g)].map(m=>m[1]);
+      return J(all.filter(e=>name?e.StopName.Zh_tw===name:uids.length?uids.includes(e.StopUID):true));
+    }
+    const uid=(ROUTES[city]||[]).find(r=>r[1]===route);
+    if(!uid)return J([]);
+    if(kind==="StopOfRoute")return J([{RouteUID:uid[0],RouteName:{Zh_tw:route},Direction:0,Stops:stops(false)},{RouteUID:uid[0],RouteName:{Zh_tw:route},Direction:1,Stops:stops(true)}]);
+    if(kind==="Shape")return J(opt.noShape?[]:[{RouteUID:uid[0],RouteName:{Zh_tw:route},Direction:0,Geometry:"LINESTRING("+ROAD.map(q=>q[1]+" "+q[0]).join(",")+")"}]);
+    if(kind==="EstimatedTimeOfArrival")return J(etaRows(route,uid[0]));
+    if(kind==="RealTimeNearStop")return J([{PlateNumb:"AAA-001",Direction:0,StopUID:"S1",A2EventType:1},{PlateNumb:"BBB-002",Direction:0,StopUID:"S3",A2EventType:0}]);
+    return J([]);
+  };
+}
+
+/* ================= 測試工具 ================= */
+/* ?app= 可以指定要測的看板檔案（相對於 tests/），預設是 ../index.html；用來對故意改壞的版本做突變測試 */
+const APP=fetch(new URLSearchParams(location.search).get("app")||"../index.html",{cache:"no-store"}).then(r=>r.text());
+const CRED={tdx_cred:JSON.stringify({id:"test-id",secret:"test-secret"}),tdx_tok:JSON.stringify({v:"tok",exp:Date.now()+36e5})};
+let frame,win;
+const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+async function until(fn,ms=6000,what="條件"){
+  const t0=Date.now();
+  for(;;){let v;try{v=fn()}catch(e){}if(v)return v;if(Date.now()-t0>ms)throw new Error("等待逾時："+what);await sleep(50)}
+}
+async function boot(opt={},size=[375,700]){
+  let html=await APP;
+  if(opt.noLeaflet)html=html.replace(/https:\/\/cdnjs\.cloudflare\.com\/ajax\/libs\/leaflet\/1\.9\.4\/leaflet\.min\.js/,"https://127.0.0.1:1/blocked.js");
+  html=html.replace("<head>","<head><base href=\"../\"><script>("+ENV.toString()+")("+JSON.stringify(opt)+")<\/script>");
+  if(frame)frame.remove();
+  frame=document.createElement("iframe");frame.width=size[0];frame.height=size[1];
+  document.getElementById("stage").appendChild(frame);
+  const d=frame.contentDocument;d.open();d.write(html);d.close();
+  win=frame.contentWindow;
+  await until(()=>win.eval('typeof go==="function"&&document.getElementById("main").innerHTML.length>0'),8000,"看板載入");
+  return win;
+}
+const ev=code=>win.eval(code);
+const $f=sel=>win.document.querySelector(sel);
+const $$f=sel=>[...win.document.querySelectorAll(sel)];
+const calls=()=>win.__calls;
+const click=sel=>{const e=typeof sel==="string"?$f(sel):sel;if(!e)throw new Error("找不到元素："+sel);e.click()};
+function eq(a,b,msg){if(JSON.stringify(a)!==JSON.stringify(b))throw new Error((msg||"值不相等")+"\n  實際："+JSON.stringify(a)+"\n  預期："+JSON.stringify(b))}
+function ok(v,msg){if(!v)throw new Error(msg||"條件不成立")}
+function contrast(c1,c2){
+  const L=c=>{const a=c.match(/[\d.]+/g).slice(0,3).map(Number).map(v=>{v/=255;return v<=.03928?v/12.92:Math.pow((v+.055)/1.055,2.4)});return .2126*a[0]+.7152*a[1]+.0722*a[2]};
+  const x=L(c1),y=L(c2);return (Math.max(x,y)+.05)/(Math.min(x,y)+.05);
+}
+async function openRoute(name,dir){
+  ev(`location.hash="#route/Taipei/${encodeURIComponent(name)}/${dir||0}"`);
+  await until(()=>ev("S.view==='route'&&S.stops&&S.updated&&!S.busy"),8000,"路線載入");
+  await sleep(50);
+}
+
+/* ================= 測試案例 ================= */
+const T=[];
+const test=(name,fn)=>T.push({name,fn});
+
+test("示範模式：沒有金鑰時顯示示範資料，不呼叫 TDX",async()=>{
+  await boot({});
+  ok($f(".demo"),"應顯示示範資料提示");
+  eq($$f("#main .row").length,3,"示範常用項目數");
+  eq(calls().length,0,"不應呼叫 TDX");
+});
+
+test("搜尋純數字：只在本機路線清單找，不查站牌；第二次搜尋不再呼叫",async()=>{
+  await boot({storage:CRED,hash:"#search"});
+  $f("#q").value="262";click('[data-act="search"]');
+  await until(()=>ev("!S.busy&&S.results"),6000,"搜尋完成");
+  eq(calls().map(c=>c.kind+"/"+c.city).sort(),["Route/NewTaipei","Route/Taipei"],"第一次只抓兩個城市的路線清單");
+  const names=$$f("#main .row .rt").map(e=>e.textContent);
+  ok(names.filter(n=>n==="262").length===2,"台北與新北的 262 都要出現："+names.join(","));
+  const n=calls().length;
+  $f("#q").value="50";click('[data-act="search"]');
+  await until(()=>ev("!S.busy&&S.results"),6000,"第二次搜尋");
+  eq(calls().length,n,"路線清單已快取，第二次不應呼叫");
+});
+
+test("搜尋中文：會向台北、新北各查一次站牌",async()=>{
+  await boot({storage:CRED,hash:"#search"});
+  $f("#q").value="臺大";click('[data-act="search"]');
+  await until(()=>ev("!S.busy&&S.results"),6000,"搜尋完成");
+  eq(calls().filter(c=>c.kind==="Stop").length,2,"站牌查詢次數");
+  ok($$f("#main .row b").some(b=>b.textContent==="臺大醫院"),"應找到臺大醫院");
+});
+
+test("路線頁：站序、到站狀態（即時／表定／末班）、路線條與公車位置",async()=>{
+  await boot({storage:CRED});
+  await openRoute("262",0);
+  const rows=$$f('[data-act="pick"]');
+  eq(rows.length,6,"站數");
+  eq(rows.map(r=>r.querySelector(".eta").className.replace("eta","").trim()),["now txt","soon","sched","","off",""],"到站牌樣式");
+  ok(rows[0].querySelector(".eta svg.live"),"即時預估要有訊號圖示");
+  ok(!rows[2].querySelector(".eta svg.live")&&/表定/.test(rows[2].querySelector(".eta").textContent),"表定不應有訊號圖示，且寫著表定");
+  eq(rows[2].querySelector(".eta").getAttribute("aria-label"),"表定推算：12 分鐘","表定的輔助說明");
+  ok(/末班車已過/.test(rows[4].textContent),"末班車已過");
+  ok(rows[5].querySelector(".tag.last"),"末班車標記");
+  ok(rows[0].querySelector(".strip.first")&&rows[5].querySelector(".strip.last"),"路線條首末站");
+  eq(rows.map(r=>r.querySelector(".bus.at")?1:0).join(""),"010000","進站中的車在第 2 站");
+  eq(rows.map(r=>r.querySelector(".bus.gone")?1:0).join(""),"000100","已離站的車在第 4、5 站之間");
+  eq(calls().map(c=>c.kind).filter(k=>k!=="Shape").sort(),["EstimatedTimeOfArrival","RealTimeNearStop","StopOfRoute"],"開路線的呼叫");
+});
+
+test("路線線形：拿到 Shape 後地圖畫沿路線形；沒有線形時用站牌連線",async()=>{
+  await boot({storage:CRED});
+  await openRoute("262",0);
+  const pts=()=>ev("(()=>{let n=0;lay.eachLayer(l=>{if(l instanceof L.Polyline&&!(l instanceof L.CircleMarker))n=Math.max(n,l.getLatLngs().length)});return n})()");
+  await until(()=>pts()===11,6000,"線形 11 點");
+  await boot({storage:CRED,noShape:true});
+  await openRoute("262",0);
+  await sleep(400);
+  eq(pts(),6,"沒有線形時用 6 個站牌連線");
+});
+
+test("路線家族配色：紅30 的標題與路線條用紅色，262 沿用主色",async()=>{
+  await boot({storage:CRED});
+  await openRoute("紅30",0);
+  const red=ev("famColor('紅30')");
+  ok(red,"紅30 應有家族色");
+  const h1=getComputedStyle($f(".bar h1")).color, ln=getComputedStyle($f(".strip .ln")).backgroundColor;
+  const hex=c=>"#"+c.match(/\d+/g).slice(0,3).map(x=>(+x).toString(16).padStart(2,"0")).join("");
+  eq([hex(h1),hex(ln)],[red,red],"標題與路線條顏色");
+  eq(ev("famColor('262')"),null,"數字路線沒有家族色");
+});
+
+test("家族配色對比：六色在目前的深淺模式下對面板底色都 ≥ 4.5:1",async()=>{
+  await boot({storage:CRED});
+  const surface=getComputedStyle(win.document.documentElement).getPropertyValue("--surface").trim();
+  const toRgb=h=>"rgb("+[1,3,5].map(i=>parseInt(h.slice(i,i+2),16)).join(",")+")";
+  for(const n of ["紅30","藍1","棕6","綠1","橘2","小1"]){
+    const c=contrast(toRgb(ev(`famColor('${n}')`)),toRgb(surface));
+    ok(c>=4.5,n+" 對比只有 "+c.toFixed(2));
+  }
+});
+
+test("每分鐘 5 次節流：連續 7 個請求只送出 5 個，其餘排隊並顯示等待",async()=>{
+  await boot({storage:CRED});
+  ev('for(let i=0;i<7;i++)api("EstimatedTimeOfArrival/City/Taipei",{},null).catch(()=>{})');
+  await until(()=>calls().length>=5,4000,"送出 5 個");
+  await sleep(600);
+  eq(calls().length,5,"一分鐘內只送出 5 個");
+  ok(ev("waitUntil>Date.now()"),"應進入等待配額狀態");
+});
+
+test("換頁後排隊中的舊請求會取消，不浪費配額",async()=>{
+  await boot({storage:Object.assign({tdx_calls:JSON.stringify(Array(5).fill(Date.now()))},CRED)});
+  const n0=calls().length;
+  ev('window.__r=api("EstimatedTimeOfArrival/City/Taipei",{},()=>true).then(()=>"sent",e=>e===STALE?"stale":"err")');
+  await until(()=>ev("window.__r")&&ev("window.__r").then,1000);
+  const r=await ev("window.__r");
+  eq(r,"stale","請求應被取消");
+  eq(calls().length,n0,"沒有送出");
+});
+
+test("收到 429：記下暫停時間，等配額恢復再試",async()=>{
+  await boot({storage:CRED,limit:0});
+  ev('api("EstimatedTimeOfArrival/City/Taipei",{},null).catch(()=>{})');
+  await until(()=>calls().length>=1,4000,"送出第一次");
+  await sleep(300);
+  eq(calls()[0].status,429,"伺服器回 429");
+  const block=JSON.parse(win.__mem.tdx_block||"0")-Date.now();
+  ok(block>55000&&block<=61000,"暫停約 61 秒，實際 "+Math.round(block/1000)+" 秒");
+  eq(calls().length,1,"暫停期間不重送");
+});
+
+test("網址與返回：換頁寫入瀏覽紀錄，上一頁回到前一個畫面；無效網址改正為首頁",async()=>{
+  /* 不呼叫真正的上一頁：瀏覽器把外層與所有 iframe（包括已移除的）的紀錄串在一起，退過頭會把測試頁本身導走。
+     改成檢查 pushState 有被呼叫，再用 popstate 事件模擬上一頁。 */
+  await boot({storage:CRED});
+  eq(win.location.hash,"#home","起始網址");
+  click("#tab-search");$f("#q").value="262";click('[data-act="search"]');
+  await until(()=>ev("!S.busy&&S.results"),6000);
+  click('#main [data-act="route"]');
+  await until(()=>ev("S.view==='route'&&S.stops"),6000);
+  eq(win.location.hash,"#route/Taipei/262/0","路線網址");
+  eq(win.__pushes,["#search","#route/Taipei/262/0"],"換頁要寫入瀏覽紀錄");
+  const back=(h,n)=>{win.history.replaceState({nextstop:n},"",h);win.dispatchEvent(new win.PopStateEvent("popstate",{state:{nextstop:n}}))};
+  back("#search",1);await until(()=>ev("S.view==='search'"),3000,"上一頁回到搜尋");
+  eq(ev("depth"),1,"看板內的頁數");
+  back("#home",0);await until(()=>ev("S.view==='home'"),3000,"上一頁回到首頁");
+  win.location.hash="#route/Mars/999";
+  await until(()=>win.location.hash==="#home"&&ev("S.view==='home'"),3000,"無效網址改正");
+});
+
+test("深層連結：直接開 #route/Taipei/262/1 會顯示回程",async()=>{
+  await boot({storage:CRED,hash:"#route/Taipei/262/1"});
+  await until(()=>ev("S.view==='route'&&S.stops&&S.updated"),8000);
+  eq(ev("S.dir"),1,"方向");
+  ok(/往 北門/.test($f('.seg [aria-pressed="true"]').textContent),"回程往北門");
+});
+
+test("方向記憶：切到回程後，從搜尋再進來維持回程",async()=>{
+  await boot({storage:CRED,hash:"#search"});
+  const fromSearch=async()=>{
+    ev('go("search")');$f("#q").value="262";click('[data-act="search"]');
+    await until(()=>ev("!S.busy&&S.results"),6000);
+    click('#main [data-act="route"][data-city="Taipei"]');
+    await until(()=>ev("S.view==='route'&&S.stops"),6000);
+  };
+  await fromSearch();eq(ev("S.dir"),0,"第一次是去程");
+  click('[data-act="dir"][data-d="1"]');
+  await fromSearch();eq(ev("S.dir"),1,"再進來是回程");
+});
+
+test("常用分組：依時段自動切換，分組沒有項目時顯示全部",async()=>{
+  const favs=[{type:"rs",city:"Taipei",route:"262",routeUID:"TPE262",dir:0,stopUID:"S1",stopName:"臺北車站(忠孝)",toward:"信義永康街口",group:"work",pos:[25.047,121.516]},
+    {type:"rs",city:"Taipei",route:"紅30",routeUID:"TPER30",dir:0,stopUID:"S3",stopName:"中正紀念堂",toward:"信義永康街口",group:"home",pos:[25.04,121.52]},
+    {type:"st",name:"東門",pos:[[25.0378,121.5201]]}];
+  const rowsAt=async h=>{await boot({storage:Object.assign({bus_favs:JSON.stringify(favs)},CRED),hour:h});return [ev("homeTab()"),$$f("#main .row").length]};
+  eq(await rowsAt(8),["work",1],"早上 8 點");
+  eq(await rowsAt(13),["all",3],"下午 1 點");
+  eq(await rowsAt(19),["home",1],"晚上 7 點");
+  const noWork=favs.map(f=>Object.assign({},f,{group:f.group==="work"?undefined:f.group}));
+  await boot({storage:Object.assign({bus_favs:JSON.stringify(noWork)},CRED),hour:8});
+  eq(ev("homeTab()"),"all","上班組沒有項目時顯示全部");
+});
+
+test("分組編輯：設定分組與移除收藏會寫回儲存",async()=>{
+  const favs=[{type:"rs",city:"Taipei",route:"262",routeUID:"TPE262",dir:0,stopUID:"S1",stopName:"臺北車站(忠孝)",toward:"信義永康街口"},{type:"st",name:"東門"}];
+  await boot({storage:Object.assign({bus_favs:JSON.stringify(favs)},CRED)});
+  click('[data-act="editfav"]');
+  eq($$f(".erow").length,2,"編輯列數");
+  click($$f(".erow")[0].querySelector('[data-g="work"]'));
+  click($$f(".erow")[1].querySelector('[data-act="unfav"]'));
+  const saved=JSON.parse(win.__mem.bus_favs);
+  eq(saved.length,1,"移除後剩 1 個");
+  eq(saved[0].group,"work","分組已儲存");
+});
+
+test("舊收藏補座標：開過路線後自動補上，不另外呼叫",async()=>{
+  const favs=[{type:"rs",city:"Taipei",route:"262",routeUID:"TPE262",dir:0,stopUID:"S2",stopName:"臺大醫院",toward:"信義永康街口"},{type:"st",name:"東門"}];
+  await boot({storage:Object.assign({bus_favs:JSON.stringify(favs)},CRED)});
+  await openRoute("262",0);
+  const saved=JSON.parse(win.__mem.bus_favs);
+  ok(Array.isArray(saved[0].pos)&&saved[0].pos.length===2,"路線收藏補上座標");
+  ok(Array.isArray(saved[1].pos)&&saved[1].pos.length>=1,"站牌看板補上座標");
+  ok(!calls().some(c=>c.kind==="Stop"),"沒有額外查站牌");
+});
+
+test("列表不被壓扁（P0 回歸）：列表保持完整高度，面板可以捲動",async()=>{
+  await boot({storage:CRED},[375,560]);
+  await openRoute("262",0);
+  const l=$f("#main .list"),m=$f("#main");
+  ok(l.offsetHeight>=l.scrollHeight-2,"列表高度 "+l.offsetHeight+"，內容 "+l.scrollHeight);
+  ok(m.scrollHeight>m.clientHeight,"面板要能捲動");
+});
+
+test("定位：路線頁按 ◎ 會選取離我最近的站",async()=>{
+  await boot({storage:CRED,geo:[25.0426,121.5196]});
+  await openRoute("262",0);
+  click("#locate");
+  await until(()=>ev("S.pick"),3000,"選取");
+  eq(ev("S.pick"),"S3","最近的是中正紀念堂");
+  ok(/中正紀念堂/.test($f(".pickline").textContent),"標題列顯示選取的站");
+});
+
+test("定位被拒：顯示權限說明",async()=>{
+  await boot({storage:CRED,geo:"deny"});
+  click("#locate");
+  await until(()=>ev("S.err"),3000);
+  ok(/定位權限/.test(ev("S.err")),ev("S.err"));
+});
+
+test("附近的站牌：只列 400 公尺內，由近到遠並顯示距離",async()=>{
+  await boot({storage:CRED,hash:"#search",geo:[25.0426,121.5196]});
+  click('[data-act="nearby"]');
+  await until(()=>ev("!S.busy&&S.results&&S.results.nearby"),6000);
+  const d=$$f("#main .dist").map(e=>parseInt(e.textContent));
+  ok(d.length>0,"至少一個站");
+  ok(d.every(x=>x<=400),"都在 400 公尺內："+d);
+  ok(d.every((x,i)=>i===0||d[i-1]<=x),"由近到遠："+d);
+});
+
+test("「進站中」在目前深淺模式下文字對比 ≥ 4.5:1",async()=>{
+  await boot({storage:CRED});
+  await openRoute("262",0);
+  const e=$f(".eta.now"),cs=getComputedStyle(e);
+  const c=contrast(cs.color,cs.backgroundColor);
+  ok(c>=4.5,"對比只有 "+c.toFixed(2));
+  eq(cs.opacity,"1","閃爍不應改變透明度");
+});
+
+test("最窄 320px：各畫面沒有水平捲動",async()=>{
+  await boot({storage:CRED},[320,640]);
+  const over=()=>ev("document.documentElement.scrollWidth-document.documentElement.clientWidth");
+  for(const v of ["home","search","settings"]){ev(`go("${v}")`);await sleep(150);eq(over(),0,v+" 頁")}
+  await openRoute("262",0);eq(over(),0,"路線頁");
+  ev('S.editFav=true;go("home")');await sleep(150);eq(over(),0,"分組編輯");
+});
+
+test("解析器：WKT 與 encoded polyline",async()=>{
+  await boot({});
+  eq(ev('parseWKT("LINESTRING(121.5 25.0, 121.51 25.01)")'),[[[25,121.5],[25.01,121.51]]],"LINESTRING");
+  eq(ev('parseWKT("MULTILINESTRING((121.5 25.0,121.51 25.01),(121.6 25.1,121.61 25.11))").length'),2,"MULTILINESTRING");
+  eq(ev('decodePolyline("_p~iF~ps|U_ulLnnqC_mqNvxq`@")'),[[38.5,-120.2],[40.7,-120.95],[43.252,-126.453]],"Google 範例");
+});
+
+test("Leaflet 載入失敗：退回單欄列表，功能照常",async()=>{
+  await boot({storage:CRED,noLeaflet:true});
+  ok(win.document.documentElement.classList.contains("nomap"),"應加上 nomap");
+  await openRoute("262",0);
+  eq($$f('[data-act="pick"]').length,6,"列表照常顯示");
+});
+
+/* ================= 執行 ================= */
+(async()=>{
+  const before=JSON.stringify(Object.fromEntries(Object.keys(localStorage).map(k=>[k,localStorage.getItem(k)])));
+  const grep=new URLSearchParams(location.search).get("grep");
+  const list=document.getElementById("list"),results=[];
+  for(const t of T.filter(t=>!grep||t.name.includes(grep))){
+    const li=document.createElement("li");li.innerHTML='<span class="st">…</span>'+t.name.replace(/</g,"&lt;");list.appendChild(li);
+    const t0=performance.now();
+    try{await t.fn();li.className="pass";li.querySelector(".st").textContent="通過";results.push({name:t.name,ok:true})}
+    catch(e){li.className="fail";li.querySelector(".st").textContent="失敗";
+      const w=document.createElement("span");w.className="why";w.textContent=e&&e.message||String(e);li.appendChild(w);
+      results.push({name:t.name,ok:false,error:e&&e.message||String(e)})}
+    li.insertAdjacentHTML("beforeend",'<span class="ms">'+Math.round(performance.now()-t0)+" ms</span>");
+  }
+  if(frame)frame.remove();
+  /* 最後確認：真實的 localStorage 完全沒被動到 */
+  const after=JSON.stringify(Object.fromEntries(Object.keys(localStorage).map(k=>[k,localStorage.getItem(k)])));
+  const iso={name:"隔離：測試前後，這個網域真實的 localStorage 完全相同",ok:before===after};
+  const li=document.createElement("li");li.className=iso.ok?"pass":"fail";li.innerHTML='<span class="st">'+(iso.ok?"通過":"失敗")+"</span>"+iso.name;list.appendChild(li);
+  results.push(iso);
+  const pass=results.filter(r=>r.ok).length;
+  document.getElementById("sum").textContent=(pass===results.length?"全部通過：":"有失敗：")+pass+" / "+results.length;
+  const out=document.getElementById("result");out.textContent=JSON.stringify({pass,total:results.length,results});
+  document.title=(pass===results.length?"通過 ":"失敗 ")+pass+"/"+results.length+" NextStop 測試";
+})();
+</script>
+</body>
+</html>
