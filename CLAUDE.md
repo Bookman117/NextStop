@@ -9,6 +9,8 @@
 ## 目前檔案
 
 - `index.html`：整個看板，單一檔案（HTML、CSS、JS 都在裡面），沒有建置步驟。原檔名是 `bus-board.html`。
+- `manifest.webmanifest`、`icon.svg`、`icons/icon-{180,192,512}.png`：PWA 名稱與圖示。PNG 由 `icon.svg` 用 `sips -s format png -z N N icon.svg --out icons/icon-N.png` 產生，改圖示時三個尺寸要一起重產
+- `sw.js`：service worker（2026-11-18 加入）。導覽請求 network-first，失敗時回快取的 `./`；同源 png/svg/webmanifest 與 Leaflet CDN cache-first；NLSC 圖磚 stale-while-revalidate、上限 400 張；TDX 與 Google Fonts 不攔截。改快取清單或策略時把 `VERSION` 加一。圖磚以 `crossOrigin:"anonymous"` 請求（NLSC 有 CORS），避免 opaque 回應灌水占用儲存配額
 - `README.md`：給使用者與訪客看的說明（功能、取得金鑰、隱私、技術說明）。功能或端點有變動時要一起更新。
 - `drafts/`：設計草案與 designforge 紀錄（`2026-11-17--nextstop-map.md`），已在 `.gitignore`，不進 repo。
 
@@ -57,6 +59,7 @@
 - 用 jsdom 模擬測過所有畫面、按鈕、收藏、搜尋，以及模擬的 429 情境
 - 2026-11-17 使用者實測：第一次查路線要等 60 秒配額。原因是搜尋每次花 4 次（路線＋站牌 × 2 城市），再開路線 3 次就超過。改成本機路線清單後，模擬測試：首次使用搜尋 2 次、開路線 3 次，資料 1.6 秒顯示；之後搜尋 0 次、開路線 2 到 3 次
 - 2026-11-17 UI/UX 審視後修正：列表壓扁（手機 8 站只顯示 151/525px、桌面 60 站只顯示 545/3905px）、深色「進站中」對比 2.3:1、換頁不寫瀏覽紀錄。修正後實測：列表完整高度、滑鼠滾輪可捲、深色「進站中」8.0:1、動畫中 opacity 固定 1、返回鍵與 history.back 正確回上一頁、深層連結可直接開啟、無效網址改正為 #home
+- 2026-11-18 PWA：sw.js 在 Node 以模擬的 caches／fetch 測過 9 項（安裝快取 8 個檔、線上導覽走網路、離線導覽回快取頁、TDX 與 Fonts 不攔截、Leaflet 不重抓、圖磚上限 400、離線用快取圖磚、啟用時刪舊版快取）。Claude 內建預覽瀏覽器不支援 service worker（註冊時 fetch script 失敗，看板功能不受影響）；Vivaldi headless 不會自行結束，無法用來驗證
 - 2026-11-18 P2 修正後模擬測試：觸控按鈕 44×44、把手上方 15px 仍點得到、Tab 順序面板在前；定位（假造座標）在路線頁選到最近的站、標題列顯示「6 分 捷運西門站」且 peek 時可見；附近站牌列出「捷運西門站 39 公尺」；定位被拒時顯示權限說明；手機 375 無水平溢位
 - 2026-11-17 地圖版用示範資料在瀏覽器測過：桌面 1440 與手機 390、320 寬度、深淺色、列表與地圖雙向選取、抽屜點按與拖曳、Leaflet 被擋時的單欄退路；各頁 root 沒有水平溢位
 
@@ -67,6 +70,7 @@
 - 手機上實際的排版與抽屜拖曳手感（只在桌面瀏覽器模擬過）
 - 「附近的站牌」的 OData 經緯度 `$filter` 在真實 TDX 上是否接受（語法是標準 OData，但沒拿到真實回應）
 - 實機定位權限流程（iOS Safari／加入主畫面）
+- 真實瀏覽器中 service worker 的註冊與離線開啟（只在 Node 模擬環境測過策略）；iOS 加入主畫面後的圖示與全螢幕外觀
 - TDX `Shape` 的 `Geometry` 與 `StopPosition` 欄位格式（WKT 與 encoded polyline 解析器已用已知資料測過，但沒有拿到真實 TDX 回應；使用者截圖中的直線是線形還在排隊）
 
 ## 已知限制

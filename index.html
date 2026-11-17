@@ -4,6 +4,15 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>雙北公車即時看板</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icons/icon-180.png">
+<meta name="theme-color" content="#eef1f4" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0e171d" media="(prefers-color-scheme: dark)">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="NextStop">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700&family=Saira+Condensed:wght@600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" integrity="sha384-c6Rcwz4e4CITMbu/NBmnNS8yN2sC3cUElMEMfP3vqqKFp7GOYaaBBCqmaWBjmkjb" crossorigin="anonymous" referrerpolicy="no-referrer">
@@ -266,6 +275,7 @@ function errText(e){
   if(e.status===429)return "TDX 回應呼叫太頻繁（免費方案每分鐘 5 次），下一輪會自動重試。";
   if(e.status)return "TDX 回應錯誤（HTTP "+e.status+"），下一輪會自動重試。";
   if(e.name==="AbortError")return "連線逾時（12 秒）。請檢查網路後再試。";
+  if(!navigator.onLine)return "目前離線，看不到即時到站時間。恢復連線後會自動更新。";
   return "連不上 TDX。若你是在聊天室的檔案預覽裡開啟，預覽環境會擋掉對外連線，請改用手機或電腦瀏覽器直接開啟檔案。";
 }
 
@@ -463,6 +473,7 @@ setInterval(()=>{
   if(S.left<=0)refresh();
 },1000);
 document.addEventListener("visibilitychange",()=>{if(!document.hidden&&live())refresh()});
+addEventListener("online",()=>{if(live())refresh()});
 /* ---------- 網址與瀏覽紀錄 ----------
    每個畫面對應一個 hash：#home、#search、#settings、#route/{City}/{路線}/{方向}、#stop/{站名}。
    換頁時寫入瀏覽紀錄，手機返回手勢與瀏覽器上一頁會回到前一個畫面；路線頁也能加入書籤。 */
@@ -702,7 +713,8 @@ const css=v=>getComputedStyle(document.documentElement).getPropertyValue(v).trim
 function initMap(){
   if(!window.L){document.documentElement.classList.add("nomap");return}
   map=L.map("map",{zoomControl:false,attributionControl:false}).setView([25.04,121.52],12);
-  L.tileLayer("https://wmts.nlsc.gov.tw/wmts/EMAP01/default/GoogleMapsCompatible/{z}/{y}/{x}",{maxZoom:19,
+  /* crossOrigin：圖磚以 CORS 取得，service worker 才能存成一般回應（opaque 回應會被瀏覽器灌水計入儲存空間） */
+  L.tileLayer("https://wmts.nlsc.gov.tw/wmts/EMAP01/default/GoogleMapsCompatible/{z}/{y}/{x}",{maxZoom:19,crossOrigin:"anonymous",
     attribution:'<a href="https://maps.nlsc.gov.tw/" target="_blank" rel="noopener">內政部國土測繪中心</a>'}).addTo(map);
   L.control.zoom({position:"topright"}).addTo(map);
   const Loc=L.Control.extend({onAdd(){
@@ -914,6 +926,9 @@ function demoApi(path,p){
   return out;
 }
 
+/* PWA：加入主畫面後可離線開啟介面。只在 https 或 localhost 註冊 */
+if("serviceWorker" in navigator&&(location.protocol==="https:"||location.hostname==="localhost"||location.hostname==="127.0.0.1"))
+  addEventListener("load",()=>navigator.serviceWorker.register("sw.js").catch(()=>{}));
 initMap();setSheet(S.sheet);
 (function(){
   const [v,p]=fromHash(location.hash);   // 無效的 hash 會落回首頁，網址也一併改正

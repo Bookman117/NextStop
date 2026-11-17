@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <!-- NextStop 圖示：公車站牌（圓牌＋立柱）加上「下一站」的箭頭。內容都在中央 80% 安全區內，可當 maskable 圖示裁切 -->
+  <rect width="512" height="512" fill="#0b6e8a"/>
+  <rect x="241" y="236" width="30" height="176" rx="10" fill="#e3eef2"/>
+  <rect x="196" y="398" width="120" height="22" rx="11" fill="#e3eef2"/>
+  <circle cx="256" cy="196" r="104" fill="#ffffff"/>
+  <path d="M206 196h82" stroke="#0b6e8a" stroke-width="30" stroke-linecap="round"/>
+  <path d="M262 156l44 40-44 40" fill="none" stroke="#0b6e8a" stroke-width="30" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>
