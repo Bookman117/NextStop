@@ -14,7 +14,7 @@
 <meta name="apple-mobile-web-app-title" content="NextStop">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700&family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Huninn&family=Noto+Sans+TC:wght@400;500;700&family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" integrity="sha384-c6Rcwz4e4CITMbu/NBmnNS8yN2sC3cUElMEMfP3vqqKFp7GOYaaBBCqmaWBjmkjb" crossorigin="anonymous" referrerpolicy="no-referrer">
 <style>
 /* 版面：單欄手機看板。左側固定寬度的到站時間牌，右側站名與車輛，底部三個分頁。
@@ -29,7 +29,7 @@
   --num:var(--ink);
   --f-num:"Geist Mono",ui-monospace,monospace;
   --f-mono:"Geist Mono",ui-monospace,monospace;
-  --f-body:"Geist","Noto Sans TC","PingFang TC","Microsoft JhengHei",sans-serif;
+  --f-body:"Geist","Huninn","Noto Sans TC","PingFang TC","Microsoft JhengHei",sans-serif;
   color-scheme:light;
 }
 @media (prefers-color-scheme:dark){
@@ -44,7 +44,8 @@
 }
 *{box-sizing:border-box}
 html,body{height:100%}
-body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--f-body);font-size:16px;line-height:1.45;-webkit-text-size-adjust:100%}
+/* 中文用 jf 粉圓體（Huninn，OFL，2026-11-18 使用者指定）。它只有一種字重，關掉瀏覽器的假粗體，層級改靠字級與顏色；英數仍是 Geist */
+body{font-synthesis-weight:none;margin:0;background:var(--bg);color:var(--ink);font-family:var(--f-body);font-size:16px;line-height:1.45;-webkit-text-size-adjust:100%}
 button,input{font:inherit;color:inherit}
 button{cursor:pointer;background:none;border:0;padding:0}
 :focus-visible{outline:3px solid var(--accent);outline-offset:2px}

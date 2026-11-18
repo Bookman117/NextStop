@@ -53,6 +53,7 @@
   - 行程卡 `tripCard()`：路線（家族色）＋往哪＋站名、大字倒數（Geist Mono）、`cells()` 10 格燈條（1 格＝1 分鐘，向上取整，超過 10 分鐘全亮，沒有倒數不亮）、`tripSay()` 一句話（只依分鐘分級：進站中／≤3 快到了／≤8 還有一點時間／其餘還早；表定與營運狀態另有說法；沒有步行時間資料，不寫「何時出門」）
   - 常用頁的卡同時是 `.row`（測試以 `#main .row` 計數）；路線頁的卡是 `.pickline.trip`，放在標題列，抽屜 peek 時也看得到
   - 進站中仍是紅底閃爍（`.trip .n.now`，外圈光暈，不改 opacity）
+  - 中文字體：jf 粉圓體（Google Fonts `Huninn`，OFL，2026-11-18 使用者指定）。只有 400 一種字重，`body` 設 `font-synthesis-weight:none` 避免假粗體，層級靠字級與顏色；英數用 Geist／Geist Mono，Noto Sans TC 只當缺字備援
   - 草案：`drafts/skins/`（換膚）、`drafts/leap/`（X、Y）、`drafts/r2/`（P、Q）
 - 常用分組（2026-11-18，參考 Bus+、Citymapper、Transit）：收藏可帶 `group: "work"|"home"`。`autoTab()` 依時段預設分頁（<12 點 work、≥16 點 home，該組沒有項目就 all）；手動切換存在 `S.homeTab`（只在這次開啟有效）。編輯模式（`S.editFav`）設定分組與移除收藏。常用頁地圖只畫目前分頁的項目
 - 即時與表定（參考 Transit、OneBusAway）：StopStatus 0 的 EstimateTime 是即時預估，加訊號圖示；StopStatus 1 且有 EstimateTime 是表定推算，`.eta.sched` 虛線框、字樣「表定」。到站牌有 aria-label 說明是哪一種
