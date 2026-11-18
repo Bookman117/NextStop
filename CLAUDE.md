@@ -10,7 +10,7 @@
 
 - `index.html`：整個看板，單一檔案（HTML、CSS、JS 都在裡面），沒有建置步驟。原檔名是 `bus-board.html`。
 - `manifest.webmanifest`、`icon.svg`、`icons/icon-{180,192,512}.png`：PWA 名稱與圖示。PNG 由 `icon.svg` 用 `sips -s format png -z N N icon.svg --out icons/icon-N.png` 產生，改圖示時三個尺寸要一起重產
-- `sw.js`：service worker（2026-11-18 加入）。導覽請求 network-first，失敗時回快取的 `./`；同源 png/svg/webmanifest 與 Leaflet CDN cache-first；NLSC 圖磚 stale-while-revalidate、上限 400 張；TDX 與 Google Fonts 不攔截。改快取清單或策略時把 `VERSION` 加一。圖磚以 `crossOrigin:"anonymous"` 請求（NLSC 有 CORS），避免 opaque 回應灌水占用儲存配額
+- `sw.js`：service worker（2026-11-18 加入，2026-11-19 改為 v2）。導覽請求 network-first，失敗時回快取的 `./`；同源 png/svg/webmanifest 與 MapLibre（unpkg 指定版本）cache-first；`tiles.openfreemap.org`（樣式、向量圖磚、字型、圖示）stale-while-revalidate、上限 300 筆；TDX 與 Google Fonts 不攔截。改快取清單或策略時把 `VERSION` 加一，啟用時會刪掉舊版快取（含舊的點陣圖磚）
 - `tests/index.html`：瀏覽器自動化測試，28 項，約 8 秒。改完 `index.html` 後用本機伺服器開 `tests/` 跑一次（`python3 -m http.server` 後開 `/tests/`）。`?grep=` 篩選、`?app=` 指定別的看板檔（相對於 tests/，做突變測試用）。測試環境注入在看板 `<head>` 最前面：記憶體版 localStorage（不碰真實資料，最後一項會比對前後）、模擬 TDX（`ENV()` 內的 ROUTES／站序／ETA）、假定位、固定時段。不要在測試裡呼叫真正的 `history.back()`：瀏覽器把外層與所有 iframe（包括已移除的）的紀錄串在一起，退過頭會把測試頁本身導走；改用 `__pushes` 檢查 pushState，並用 popstate 事件模擬上一頁。也不要用 `history.length` 判斷（上限 50）
 - `tests/sw.test.mjs`：`node tests/sw.test.mjs`，在 Node 模擬 caches／fetch 測 sw.js 的 9 項策略；可傳入別的 sw 檔路徑做突變測試。改 sw.js 的快取清單時要同步更新預期數字
 - 新增功能時，在 `tests/index.html` 補對應測試；修 bug 時先補一個會失敗的測試
@@ -42,7 +42,7 @@
 - 請求依序送出：`queued()` 在任一 61 秒內最多送 5 次，呼叫時間記在 localStorage（`tdx_calls`），同一瀏覽器的分頁共用。遇到 429 時把 `tdx_block` 設到 Retry-After 或 61 秒後，等配額恢復再重試一次
 - 每個 `api()` 呼叫可帶 `stale()`：換頁或下一輪更新開始後，排隊中的舊請求不送出，避免浪費配額
 - 靜態資料快取 7 天：路線清單存在 `routes|{City}`，站序（含站牌座標 `pos`）存在 `sor2|{City}|{路線}`，線形存在 `shape|{City}|{路線}`。舊版的 `route_info` 啟動時刪除
-- 地圖：Leaflet 1.9.4（cdnjs，有 SRI）＋內政部國土測繪中心 EMAP01（灰階）WMTS 底圖，用 CSS filter 壓低對比，深色模式反相。使用者要求底圖簡化；CARTO 簡化底圖已改為需要 API key，不採用。公車畫在 RealTimeNearStop 的站牌座標上，不呼叫 GPS 端點，避免增加每輪呼叫次數。`window.L` 不存在時 `<html>` 加 `.nomap`，退回單欄列表
+- 地圖（2026-11-19 使用者同意從 Leaflet＋國土測繪中心改為向量）：MapLibre GL 5.24.1（unpkg，有 SRI）＋ OpenFreeMap 向量圖磚（OpenStreetMap 資料，免金鑰）。`mapStyle()` 抓 Positron 樣式後改成看板色票（`mapPal()` 依深淺色），抓不到時只畫底色。中文字用 `localIdeographFontFamily` 走裝置字型，不從伺服器下載 CJK 字型；地名取 `name:zh-Hant`→`name:nonlatin`→`name`。看板內部座標一律 [lat,lon]，交給 MapLibre 用 `lnglat()`。看板圖層在 `addOverlays()`，換樣式（深淺色切換）後在 `style.load` 重加；資料用 `setData()` 更新 GeoJSON source。`maplibregl` 不存在或沒有 WebGL 時 `<html>` 加 `.nomap`，退回單欄列表。之前試過的 NLSC 各圖層比較見 `drafts/map-fx/tiles.html`；CARTO 需要 API key，Stamen Toner 需要 Stadia 帳號，都不採用。公車畫在 RealTimeNearStop 的站牌座標上，不呼叫 GPS 端點
 - 收藏項目會存座標（`rs` 存 `pos:[lat,lon]`，`st` 存 `pos:[[lat,lon],...]`）。舊收藏沒有座標時自動回填、不另外呼叫 API：啟動時用快取的 `sor2|` 站序（`backfillFromCache`）、打開路線時用該路線站序（`backfillFromRoute`，`st` 依站名合併座標）、搜尋與附近站牌時用帶回的站牌座標（`backfillStops`）
 - 本月呼叫次數記在 `tdx_usage`（只算這台裝置），設定頁顯示；達 3,600 次（80%）時頁面頂端顯示警告
 - 網址路由：`#home`、`#search`、`#settings`、`#route/{City}/{路線}/{方向}`、`#stop/{站名}`。`go()` 換頁時 pushState，`depth` 記錄在看板內前進幾頁；畫面上的返回鍵在 depth>0 時用 history.back()，否則回 `S.prev`。切換方向用 replaceState。無效網址落回首頁並改正網址
@@ -53,8 +53,8 @@
   - 行程卡 `tripCard()`：路線（家族色）＋往哪＋站名、大字倒數（Geist Mono）、`cells()` 10 格燈條（1 格＝1 分鐘，向上取整，超過 10 分鐘全亮，沒有倒數不亮）、`tripSay()` 一句話（只依分鐘分級：進站中／≤3 快到了／≤8 還有一點時間／其餘還早；表定與營運狀態另有說法；沒有步行時間資料，不寫「何時出門」）
   - 常用頁的卡同時是 `.row`（測試以 `#main .row` 計數）；路線頁的卡是 `.pickline.trip`，放在標題列，抽屜 peek 時也看得到
   - 進站中仍是紅底閃爍（`.trip .n.now`，外圈光暈，不改 opacity）
-  - 地圖視覺（2026-11-18，經 drafts/map-fx/ 多輪調整後使用者同意）：由下而上是底圖（灰階、半透明，淺 .62／深 .55）→ 點雲（`cloud` 圖層 z250，`buildCloud()` 從圖磚原色取樣：道路白、街廓淺灰變成點，水域與深色文字不取；以我的位置或選取的站為中心由濃轉淡；地圖停止移動與圖磚載入後 250ms 重算一次，拖曳時跟著圖層移動不重畫，縮放時先隱藏）→ 路線（底色描邊 10px＋5px 實線）→ 站牌（一般站底色空心小圈、常用實心、選取實心加外圈）→ 公車（`--map-hot`，畫面上唯一的重點色）→ 我的位置（墨色點加淡光暈，不用藍色）
-  - 地圖動態 `FX`：定位成功後 `FX.scan()` 掃一次（流動曲線前緣＝三個正弦相加，後方 90px 淡點雲，約 2.2 秒）；之後只要有 `me`，從我的位置每 6 秒擴散一圈淡點狀波紋。動畫只在需要時跑 requestAnimationFrame，頁面在背景或「減少動態」時不跑。使用者要求：點雲常駐但不能遮蓋地圖、掃描線是曲線不是直線也不是橢圓、波紋要隱約不搶戲。實測（桌面）：點雲重算約 4ms，波紋每格約 0.002ms
+  - 地圖視覺：由下而上是底色 → 水域、公園淡色塊 → 建築（`fill-pattern` 點陣圖樣＝點雲，`dotsImage()`）→ 小路圓點虛線、主要道路細實線、鐵路 → 文字 → 路線（底色描邊 10px＋5px 實線，家族色或 `--route`）→ 站牌（一般站底色空心小圈、常用實心、選取實心加外圈，常用與選取附名稱）→ 我的位置（墨色點加精度圈，不用藍色）→ 公車（`--map-hot`，畫面上唯一的重點色，車牌白字黑底）→ `#fx` canvas。2026-11-18 的 Leaflet 版用圖磚取樣做點雲（drafts/map-fx/），向量版改由建築點陣承擔，不再取樣
+  - 地圖動態 `FX`：定位成功後 `FX.scan()` 掃一次（流動曲線前緣＝三個正弦相加，後方 90px 淡點雲，約 2.2 秒）；之後只要有 `me`，從我的位置每 6 秒擴散一圈淡點狀波紋。點陣格線用固定地點的螢幕座標對 7 取餘數對齊地圖。動畫只在需要時跑 requestAnimationFrame，頁面在背景或「減少動態」時不跑。使用者要求：點雲常駐但不能遮蓋地圖、掃描線是曲線不是直線也不是橢圓、波紋要隱約不搶戲
   - 中文字體：jf 粉圓體（Google Fonts `Huninn`，OFL，2026-11-18 使用者指定）。只有 400 一種字重，`body` 設 `font-synthesis-weight:none` 避免假粗體，層級靠字級與顏色；英數用 Geist／Geist Mono，Noto Sans TC 只當缺字備援
   - 草案：`drafts/skins/`（換膚）、`drafts/leap/`（X、Y）、`drafts/r2/`（P、Q）
 - 常用分組（2026-11-18，參考 Bus+、Citymapper、Transit）：收藏可帶 `group: "work"|"home"`。`autoTab()` 依時段預設分頁（<12 點 work、≥16 點 home，該組沒有項目就 all）；手動切換存在 `S.homeTab`（只在這次開啟有效）。編輯模式（`S.editFav`）設定分組與移除收藏。常用頁地圖只畫目前分頁的項目
@@ -75,6 +75,7 @@
 - 用 jsdom 模擬測過所有畫面、按鈕、收藏、搜尋，以及模擬的 429 情境
 - 2026-11-17 使用者實測：第一次查路線要等 60 秒配額。原因是搜尋每次花 4 次（路線＋站牌 × 2 城市），再開路線 3 次就超過。改成本機路線清單後，模擬測試：首次使用搜尋 2 次、開路線 3 次，資料 1.6 秒顯示；之後搜尋 0 次、開路線 2 到 3 次
 - 2026-11-17 UI/UX 審視後修正：列表壓扁（手機 8 站只顯示 151/525px、桌面 60 站只顯示 545/3905px）、深色「進站中」對比 2.3:1、換頁不寫瀏覽紀錄。修正後實測：列表完整高度、滑鼠滾輪可捲、深色「進站中」8.0:1、動畫中 opacity 固定 1、返回鍵與 history.back 正確回上一頁、深層連結可直接開啟、無效網址改正為 #home
+- 2026-11-19 改用 MapLibre＋OpenFreeMap：瀏覽器測試 28 項在深淺色都通過（測試環境的 fetch 對 openfreemap.org 走真網路；路線線形改看 `lastRoutePts`、公車看 `lastBus` 與 `bus` 圖層顏色、建築看 `fill-pattern`）；`tests/sw.test.mjs` 9 項通過，突變（不快取 openfreemap）被抓到。手機 390 深淺色、桌面 1280 截圖確認；深淺色切換會即時換樣式
 - 2026-11-18 地圖視覺整合：28 項在深淺色都通過（新增地圖動態測試：點雲與動態圖層存在、定位後掃描、公車用 `--map-hot`）。手機 390 寬深淺色截圖確認點雲、掃描曲線、路線描邊與公車標記；手機 Safari 的 canvas 取樣與效能尚未實測
 - 2026-11-18 視覺定案 P 行程線：27 項在深淺色都通過；突變測試 3 處（重點色給錯卡、燈格改無條件捨去、一句話門檻改 2 分）都被抓到。手機 390 寬深淺色截圖確認常用卡、選取站卡與路線列表
 - 2026-11-18 自動化測試：`tests/index.html` 25 項在深色與淺色模式都通過；`tests/sw.test.mjs` 9 項通過。突變測試：故意改壞 8 處（拿掉 flex-shrink、PER_MIN 改 6、取消表定判斷、pushState 改 replaceState、深色進站中改白字、上班／回家時段對調、不畫已離站公車、數字搜尋也查站牌）都被測試抓到；sw.js 改壞 2 處（圖磚上限、攔截 TDX）也都被抓到
@@ -86,6 +87,8 @@
 - 2026-11-17 地圖版用示範資料在瀏覽器測過：桌面 1440 與手機 390、320 寬度、深淺色、列表與地圖雙向選取、抽屜點按與拖曳、Leaflet 被擋時的單欄退路；各頁 root 沒有水平溢位
 
 ## 尚未驗證
+
+- 手機（iOS Safari／加入主畫面）上 MapLibre 的 WebGL 效能、耗電與手勢；向量圖磚與字型的離線快取實際表現
 
 - 改成每分鐘節流後，用真實 TDX 資料是否還會出現 429
 - 真實 API 回傳的欄位是否都跟程式預期的一致（站牌看板的「往 ○○」、末班車標記、車牌顯示）

@@ -66,9 +66,11 @@ function ENV(opt){
   const J=(o,status)=>new Response(JSON.stringify(o),{status:status||200,headers:{"content-type":"application/json"}});
   window.__calls=[];
   const srv=[];
+  const realFetch=window.fetch.bind(window);
   window.fetch=async(url,init)=>{
     url=String(url);
     if(url.includes("/token"))return J({access_token:"tok",expires_in:3600});
+    if(url.includes("openfreemap.org"))return realFetch(url,init);   /* 地圖樣式與向量圖磚走真的網路 */
     if(!url.includes("tdx.transportdata.tw"))return opt.realFetch?opt.realFetch(url,init):J({});
     const u=new URL(url),path=decodeURIComponent(u.pathname.split("/Bus/")[1]||""),p=Object.fromEntries(u.searchParams);
     const parts=path.split("/"),kind=parts[0],city=parts[2],route=parts[3];
@@ -111,7 +113,7 @@ async function until(fn,ms=6000,what="條件"){
 }
 async function boot(opt={},size=[375,700]){
   let html=await APP;
-  if(opt.noLeaflet)html=html.replace(/https:\/\/cdnjs\.cloudflare\.com\/ajax\/libs\/leaflet\/1\.9\.4\/leaflet\.min\.js/,"https://127.0.0.1:1/blocked.js");
+  if(opt.noLeaflet)html=html.replace(/https:\/\/unpkg\.com\/maplibre-gl@[\d.]+\/dist\/maplibre-gl\.js/,"https://127.0.0.1:1/blocked.js");
   html=html.replace("<head>","<head><base href=\"../\"><script>("+ENV.toString()+")("+JSON.stringify(opt)+")<\/script>");
   if(frame)frame.remove();
   frame=document.createElement("iframe");frame.width=size[0];frame.height=size[1];
@@ -190,7 +192,7 @@ test("路線頁：站序、到站狀態（即時／表定／末班）、路線�
 test("路線線形：拿到 Shape 後地圖畫沿路線形；沒有線形時用站牌連線",async()=>{
   await boot({storage:CRED});
   await openRoute("262",0);
-  const pts=()=>ev("(()=>{let n=0;lay.eachLayer(l=>{if(l instanceof L.Polyline&&!(l instanceof L.CircleMarker))n=Math.max(n,l.getLatLngs().length)});return n})()");
+  const pts=()=>ev("mapReady?lastRoutePts:0");
   await until(()=>pts()===11,6000,"線形 11 點");
   await boot({storage:CRED,noShape:true});
   await openRoute("262",0);
@@ -374,15 +376,16 @@ test("行程卡（常用頁）：依到站排序，只有最快到的一張用�
 
 test("地圖動態：有點雲與動態圖層；定位後掃描一次並開始波紋；公車用重點色",async()=>{
   await boot({storage:CRED,geo:[25.0426,121.5196]});
-  ok($f(".leaflet-cloud-pane canvas")&&$f(".leaflet-fx-pane canvas"),"點雲與動態圖層存在");
+  await until(()=>ev("mapReady"),8000,"地圖樣式載入");
+  ok($f("#map #fx"),"動態圖層存在");
+  eq(ev('map.getPaintProperty("building","fill-pattern")'),"dots","建築用點陣圖樣（點雲）");
   eq(ev("FX.scanAt"),0,"還沒定位不掃描");
   await openRoute("262",0);
   click("#locate");
   await until(()=>ev("FX.scanAt>0"),3000,"定位後掃描");
   ok(ev("!!me"),"有定位點才有波紋");
-  const bus=$f(".bus i");ok(bus,"地圖上有公車");
-  const bg=getComputedStyle(bus).backgroundColor,hot=getComputedStyle(win.document.documentElement).getPropertyValue("--map-hot").trim();
-  eq(bg,"rgb("+[1,3,5].map(i=>parseInt(hot.slice(i,i+2),16)).join(", ")+")","公車是唯一的重點色");
+  ok(ev("lastBus")>0,"地圖上有公車");
+  eq(ev('map.getPaintProperty("bus","circle-color")'),getComputedStyle(win.document.documentElement).getPropertyValue("--map-hot").trim(),"公車是唯一的重點色");
 });
 
 test("定位被拒：顯示權限說明",async()=>{
@@ -426,7 +429,7 @@ test("解析器：WKT 與 encoded polyline",async()=>{
   eq(ev('decodePolyline("_p~iF~ps|U_ulLnnqC_mqNvxq`@")'),[[38.5,-120.2],[40.7,-120.95],[43.252,-126.453]],"Google 範例");
 });
 
-test("Leaflet 載入失敗：退回單欄列表，功能照常",async()=>{
+test("地圖程式庫載入失敗：退回單欄列表，功能照常",async()=>{
   await boot({storage:CRED,noLeaflet:true});
   ok(win.document.documentElement.classList.contains("nomap"),"應加上 nomap");
   await openRoute("262",0);
