@@ -372,6 +372,19 @@ test("行程卡（常用頁）：依到站排序，只有最快到的一張用�
   eq(ev("S.pick"),"S1","進路線後選取該站");
 });
 
+test("地圖動態：有點雲與動態圖層；定位後掃描一次並開始波紋；公車用重點色",async()=>{
+  await boot({storage:CRED,geo:[25.0426,121.5196]});
+  ok($f(".leaflet-cloud-pane canvas")&&$f(".leaflet-fx-pane canvas"),"點雲與動態圖層存在");
+  eq(ev("FX.scanAt"),0,"還沒定位不掃描");
+  await openRoute("262",0);
+  click("#locate");
+  await until(()=>ev("FX.scanAt>0"),3000,"定位後掃描");
+  ok(ev("!!me"),"有定位點才有波紋");
+  const bus=$f(".bus i");ok(bus,"地圖上有公車");
+  const bg=getComputedStyle(bus).backgroundColor,hot=getComputedStyle(win.document.documentElement).getPropertyValue("--map-hot").trim();
+  eq(bg,"rgb("+[1,3,5].map(i=>parseInt(hot.slice(i,i+2),16)).join(", ")+")","公車是唯一的重點色");
+});
+
 test("定位被拒：顯示權限說明",async()=>{
   await boot({storage:CRED,geo:"deny"});
   click("#locate");

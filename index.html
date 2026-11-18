@@ -26,7 +26,7 @@
   --accent:#0d0e10; --accent-ink:#ffffff; --route:#5a6068;
   --now:#c8321e; --now-ink:#ffffff; --now-bg:#fff0ec; --soon:#a65300; --soon-bg:#fff6e8; --ok-bg:transparent; --off-bg:#ecece9; --seg-bg:#ebebe8;
   --hot:#ff4d1a; --hot-bg:#0d0e10; --hot-ink:#f4f4f2; --hot-mu:#9a9ea4; --cell:#e6e6e3; --hot-cell:#2a2c30;
-  --num:var(--ink);
+  --num:var(--ink); --dot:13,14,16; --map-hot:#ff4d1a;
   --f-num:"Geist Mono",ui-monospace,monospace;
   --f-mono:"Geist Mono",ui-monospace,monospace;
   --f-body:"Geist","Huninn","Noto Sans TC","PingFang TC","Microsoft JhengHei",sans-serif;
@@ -38,6 +38,7 @@
     --accent:#ecebe6; --accent-ink:#0b0c0d; --route:#9aa0a6;
     --now:#ff5a3c; --now-ink:#2a0400; --now-bg:#2a0f0a; --soon:#ffb020; --soon-bg:#231a08; --off-bg:#1c1d20; --seg-bg:#111214;
     /* 深色時最急的卡反白：淺底深字，重點色改深一階維持對比 */
+    --dot:236,235,230; --map-hot:#ff5a3c;
     --hot:#b92c0c; --hot-bg:#ecebe6; --hot-ink:#0d0e10; --hot-mu:#5c6066; --cell:#26282b; --hot-cell:#d4d3ce;
     color-scheme:dark;
   }
@@ -117,10 +118,20 @@ nav button[aria-current="page"]{color:var(--ink);font-weight:600;box-shadow:inse
    Leaflet 沒載入時（離線或 CDN 被擋）加上 .nomap，退回原本的單欄列表。 */
 :root{--navh:calc(56px + env(safe-area-inset-bottom))}
 html,body{overflow:hidden}
-#map{position:fixed;inset:0;z-index:0;background:var(--off-bg)}
+#map{position:fixed;inset:0;z-index:0;background:var(--bg)}
 /* 底圖用灰階版（EMAP01），再壓低對比，讓路線、站牌與公車浮出來 */
-#map .leaflet-tile-pane{filter:contrast(.75) brightness(1.06)}
-#map.map-dark .leaflet-tile-pane{filter:invert(1) brightness(.78) contrast(.8)}
+/* 地圖視覺層級（2026-11-18，由下而上）：
+   1 底圖：灰階、降對比、半透明，退成「基底」，文字與地標仍可辨識
+   2 點雲（cloud 圖層，z 250）：從圖磚本身取樣，道路與街廓變成點、河流留白；以焦點（我的位置或選取的站）為中心由濃轉淡
+   3 路線（overlay，z 400）：底色描邊＋實線，路線家族色或 --route 灰
+   4 站牌、公車、我的位置（marker，z 600）：公車是畫面上唯一的重點色
+   5 動態（fx 圖層，z 450）：定位後一次曲線掃描，之後從我的位置每 6 秒一圈淡波紋。減少動態時全部不跑 */
+#map .leaflet-tile-pane{filter:grayscale(1) contrast(.78) brightness(1.05);opacity:.62}
+#map.map-dark .leaflet-tile-pane{filter:grayscale(1) invert(1) brightness(.8) contrast(.85);opacity:.55}
+.leaflet-cloud-pane canvas,.leaflet-fx-pane canvas{position:absolute;left:0;top:0;pointer-events:none}
+.leaflet-cloud-pane{transition:opacity .35s}.leaflet-cloud-pane.hide{opacity:0;transition:none}
+.leaflet-container .leaflet-control-attribution{background:color-mix(in srgb,var(--bg) 78%,transparent);color:var(--muted);font:400 9px/1.6 var(--f-mono);letter-spacing:.3px;padding:0 6px;border-bottom-right-radius:6px}
+.leaflet-control-attribution a{color:var(--muted)}
 #app{position:fixed;left:0;right:0;bottom:var(--navh);height:var(--sheet,52dvh);max-width:none;min-height:0;margin:0;z-index:10;
   background:var(--bg);border-radius:18px 18px 0 0;box-shadow:0 -1px 0 var(--line),0 -16px 40px rgba(0,0,0,.16);display:flex;flex-direction:column;transition:height .22s ease}
 #app.dragging{transition:none}
@@ -136,16 +147,17 @@ nav{z-index:20}
 .row.pick{cursor:pointer}
 .row.sel{background:color-mix(in srgb,var(--hot) 8%,transparent);box-shadow:inset 3px 0 0 var(--hot)}
 .bus{position:relative}
-.bus i{position:absolute;left:-9px;top:-9px;width:18px;height:18px;border-radius:50%;background:var(--ink);border:3px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.4)}
-.bus em{position:absolute;left:0;top:13px;transform:translateX(-50%);white-space:nowrap;font:600 11px/1 var(--f-mono);font-style:normal;background:var(--ink);color:var(--bg);padding:3px 5px;border-radius:5px}
-.leaflet-tooltip{font:500 12px var(--f-body)}
+.bus i{position:absolute;left:-8px;top:-8px;width:16px;height:16px;border-radius:50%;background:var(--map-hot);border:3px solid var(--bg);box-shadow:0 0 0 1px rgba(var(--dot),.15),0 2px 8px rgba(0,0,0,.25)}
+.bus em{position:absolute;left:0;top:12px;transform:translateX(-50%);white-space:nowrap;font:500 10px/1 var(--f-mono);letter-spacing:.5px;font-style:normal;background:var(--ink);color:var(--bg);padding:3px 5px;border-radius:4px}
+.leaflet-tooltip{font:400 12px var(--f-body);background:var(--surface);color:var(--ink);border:var(--hair) solid var(--line);border-radius:6px;box-shadow:0 2px 8px rgba(0,0,0,.12);padding:3px 7px}
+.leaflet-tooltip-top:before{border-top-color:var(--surface)}
 .leaflet-container{font-family:var(--f-body)}
 @media (prefers-reduced-motion:reduce){#app{transition:none}}
 /* 觸控裝置：地圖按鈕放大到 44px */
 @media (pointer:coarse){.leaflet-bar a,.leaflet-bar button{width:44px!important;height:44px!important;line-height:44px!important;font-size:22px!important}}
 .locate{width:34px;height:34px;display:flex;align-items:center;justify-content:center;background:var(--surface);color:var(--ink);font-size:18px;cursor:pointer;border:0}
 .locate[aria-busy="true"]{opacity:.5}
-.me{width:16px;height:16px;margin:-8px 0 0 -8px;border-radius:50%;background:#2a7bf6;border:3px solid #fff;box-shadow:0 0 0 6px rgba(42,123,246,.25)}
+.me{width:14px;height:14px;margin:-7px 0 0 -7px;border-radius:50%;background:var(--ink);border:3px solid var(--bg);box-shadow:0 0 0 7px rgba(var(--dot),.14)}
 /* 收起狀態也看得到選取的站 */
 .pickline{display:flex;align-items:center;gap:8px;width:100%;margin:6px 0 2px;padding:6px 8px;border-radius:10px;background:var(--surface);border:var(--hair) solid var(--line);font-size:14px;text-align:left;min-height:44px}
 .pickline .pill{flex:0 0 auto;min-width:64px;text-align:center;border-radius:5px;padding:3px 6px;font-weight:600;font-size:13px;font-family:var(--f-mono);background:var(--off-bg)}
@@ -921,6 +933,72 @@ async function doAction(kind){
 const WIDE=matchMedia("(min-width:1024px)"),DARK=matchMedia("(prefers-color-scheme:dark)"),CALM=matchMedia("(prefers-reduced-motion:reduce)");
 let map=null,lay=null,meLayer=null,fitKey="",me=null;
 const css=v=>getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+/* ---------- 地圖動態：點雲、定位掃描、定位波紋 ----------
+   點雲：地圖停止移動、圖磚載入完後重算一次（約數毫秒），畫在 cloud 圖層的 canvas，拖曳時跟著圖層移動不重畫。
+   掃描與波紋：fx 圖層的 canvas，只在動畫期間跑 requestAnimationFrame；頁面在背景或「減少動態」時不跑。 */
+const FX={scanAt:0,raf:0,cloudAt:0,scan(){if(CALM.matches||!map)return;FX.scanAt=performance.now();fxKick()}};
+let cloudCv,fxCv,cloudT=0;
+function initFx(){
+  map.createPane("cloud").style.zIndex=250;map.createPane("fx").style.zIndex=450;
+  cloudCv=document.createElement("canvas");map.getPane("cloud").appendChild(cloudCv);
+  fxCv=document.createElement("canvas");map.getPane("fx").appendChild(fxCv);
+  const q=()=>{clearTimeout(cloudT);cloudT=setTimeout(buildCloud,250)};
+  map.on("moveend",q);map.eachLayer(l=>{if(l.on&&l.getTileUrl)l.on("load",q)});
+  map.on("zoomstart",()=>map.getPane("cloud").classList.add("hide"));
+  DARK.addEventListener("change",q);
+  document.addEventListener("visibilitychange",()=>{if(!document.hidden)fxKick()});
+}
+const sizeCv=(cv,w,h)=>{const d=devicePixelRatio||1;if(cv.width!==w*d||cv.height!==h*d){cv.width=w*d;cv.height=h*d;cv.style.width=w+"px";cv.style.height=h+"px"}const c=cv.getContext("2d");c.setTransform(d,0,0,d,0,0);return c};
+/* 焦點：我的位置 > 選取的站 > 畫面中心。點雲以焦點為中心由濃轉淡 */
+function focusPt(){
+  const cur=S.view==="route"&&S.stops&&S.stops[S.dir],sel=cur&&S.pick&&cur.Stops.find(x=>x.StopUID===S.pick);
+  const ll=me?me.pos:sel&&sel.pos;return ll?map.latLngToContainerPoint(ll):null;
+}
+function buildCloud(){
+  if(!map||!cloudCv)return;
+  const sz=map.getSize(),W=sz.x,H=sz.y,off=document.createElement("canvas");off.width=W;off.height=H;
+  const o=off.getContext("2d",{willReadFrequently:true}),box=$("map").getBoundingClientRect();
+  for(const img of map.getPane("tilePane").querySelectorAll("img")){if(!img.complete||!img.naturalWidth)continue;const r=img.getBoundingClientRect();o.drawImage(img,r.left-box.left,r.top-box.top,r.width,r.height)}
+  let d;try{d=o.getImageData(0,0,W,H).data}catch(e){return}   /* 圖磚沒有 CORS 時讀不到，就不畫點雲 */
+  const c=sizeCv(cloudCv,W,H),G=6,dot=css("--dot"),f=focusPt()||{x:W/2,y:H*.4},R=Math.hypot(W,H)*.55;
+  c.clearRect(0,0,W,H);
+  for(let y=3;y<H;y+=G)for(let x=3;x<W;x+=G){
+    const i=(y*W+x)*4;if(!d[i+3])continue;
+    const r=d[i],g=d[i+1],b=d[i+2],lum=(r+g+b)/765,water=b-r>18&&lum>.55;
+    /* EMAP01 原色：道路白、街廓淺灰、水域偏藍；深色文字標籤不取，避免蓋字 */
+    const v=water?0:lum>.985?1:lum>.955?.5:0;if(!v)continue;
+    const k=Math.max(0,1-Math.hypot(x-f.x,y-f.y)/R),a=(.1+v*.34)*(.35+.65*k*k);
+    c.fillStyle="rgba("+dot+","+a.toFixed(3)+")";const s=.9+v*.9;c.fillRect(x-s/2,y-s/2,s,s);
+  }
+  L.DomUtil.setPosition(cloudCv,map.containerPointToLayerPoint([0,0]));
+  map.getPane("cloud").classList.remove("hide");FX.cloudAt=Date.now();
+}
+const SCAN=2200,PULSE=6000,PULSE_LIFE=5200;
+function fxKick(){if(!FX.raf&&!CALM.matches&&!document.hidden)FX.raf=requestAnimationFrame(fxFrame)}
+/* 掃描前緣：三個頻率互不成倍數的正弦相加，形狀持續流動、不重複 */
+const frontY=(x,base,t)=>base+18*Math.sin(x*.011+t*.0013)+10*Math.sin(x*.027-t*.0021+1.3)+6*Math.sin(x*.053+t*.0034);
+function fxFrame(t){
+  FX.raf=0;if(!map||!fxCv||document.hidden||CALM.matches)return;
+  const sz=map.getSize(),W=sz.x,H=sz.y,c=sizeCv(fxCv,W,H),dot=css("--dot"),rgba=a=>"rgba("+dot+","+a.toFixed(3)+")";
+  L.DomUtil.setPosition(fxCv,map.containerPointToLayerPoint([0,0]));
+  c.clearRect(0,0,W,H);
+  let more=false;
+  const age=t-FX.scanAt;
+  if(FX.scanAt&&age<SCAN){
+    more=true;const base=(age/SCAN)*(H+160)-80,BAND=90,G=7,p=L.DomUtil.getPosition(map.getPane("mapPane")),ox=((p.x%G)+G)%G,oy=((p.y%G)+G)%G;
+    for(let y=Math.max(0,Math.floor((base-BAND-30-oy)/G)*G+oy);y<Math.min(H,base+30);y+=G)
+      for(let x=ox;x<W;x+=G){const dd=frontY(x,base,t)-y;if(dd<0||dd>BAND)continue;c.fillStyle=rgba(.32*(1-dd/BAND));c.fillRect(x-.8,y-.8,1.6,1.6)}
+    c.beginPath();for(let x=0;x<=W;x+=6){const y=frontY(x,base,t);x?c.lineTo(x,y):c.moveTo(x,y)}
+    c.strokeStyle=rgba(.35);c.lineWidth=1;c.stroke();
+  }
+  if(me&&(!FX.scanAt||age>SCAN*.6)){
+    more=true;const m=map.latLngToContainerPoint(me.pos),k=((t-(FX.scanAt||0))%PULSE)/PULSE_LIFE;
+    if(k<=1){const r=10+k*Math.min(W,H)*.42,a=.38*(1-k)*(1-k),n=Math.max(12,Math.floor(2*Math.PI*r/5));
+      c.strokeStyle=rgba(a*.25);c.lineWidth=6;c.beginPath();c.arc(m.x,m.y,r,0,7);c.stroke();
+      c.fillStyle=rgba(a);for(let i=0;i<n;i++){const th=i/n*Math.PI*2;c.fillRect(m.x+Math.cos(th)*r-1,m.y+Math.sin(th)*r-1,2,2)}}
+  }
+  if(more)FX.raf=requestAnimationFrame(fxFrame);
+}
 function initMap(){
   if(!window.L){document.documentElement.classList.add("nomap");return}
   map=L.map("map",{zoomControl:false,attributionControl:false}).setView([25.04,121.52],12);
@@ -937,6 +1015,7 @@ function initMap(){
   }});
   new Loc({position:"topright"}).addTo(map);
   meLayer=L.layerGroup().addTo(map);
+  initFx();
   /* 版權標示：手機放左上（下方被抽屜蓋住），桌面放右下（左上被面板蓋住） */
   const attr=L.control.attribution({prefix:'<a href="https://leafletjs.com" target="_blank" rel="noopener">Leaflet</a>'}).addTo(map);
   const place=()=>attr.setPosition(WIDE.matches?"bottomright":"topleft");place();WIDE.addEventListener("change",place);
@@ -963,11 +1042,12 @@ function locErr(e){
 function drawMe(){
   if(!map||!me)return;
   meLayer.clearLayers();
-  if(me.acc<1000)L.circle(me.pos,{radius:me.acc,weight:0,fillColor:"#2a7bf6",fillOpacity:.12,interactive:false}).addTo(meLayer);
+  if(me.acc<1000)L.circle(me.pos,{radius:me.acc,weight:0,fillColor:css("--ink"),fillOpacity:.06,interactive:false}).addTo(meLayer);
   L.marker(me.pos,{keyboard:false,interactive:false,icon:L.divIcon({className:"",html:'<div class="me"></div>',iconSize:[0,0]})}).addTo(meLayer);
 }
 /* 路線頁：選取目前方向上離我最近的站；其他畫面：把地圖移到我的位置 */
 function onLocated(){
+  map.once("moveend",()=>FX.scan());setTimeout(()=>FX.scan(),700);   /* 地圖移到定位點後掃一次（沒有移動時 700ms 後補） */
   if(S.err&&/定位|位置/.test(S.err)){S.err="";render()}
   if(S.view==="route"&&S.stops&&S.stops[S.dir]){
     const pts=S.stops[S.dir].Stops.filter(s=>s.pos);
@@ -1014,7 +1094,10 @@ function fit(key,pts,zoom){
   map.fitBounds(L.latLngBounds(pts),Object.assign({maxZoom:17,animate:false},pad()));
 }
 const dot=(p,sel,label,onClick,perm)=>{
-  const m=L.circleMarker(p,{radius:sel?9:perm?7:5,weight:2,color:"#fff",fillColor:sel?css("--now"):css("--accent"),fillOpacity:1})
+  /* 一般站：底色空心小圈；常用：實心；選取：實心加外圈 */
+  const m=L.circleMarker(p,sel?{radius:7,weight:3,color:css("--bg"),fillColor:css("--ink"),fillOpacity:1}
+    :perm?{radius:6,weight:2.5,color:css("--bg"),fillColor:css("--ink"),fillOpacity:1}
+    :{radius:4,weight:2,color:css("--route"),fillColor:css("--bg"),fillOpacity:1})
     .bindTooltip(label,{direction:"top",offset:[0,-6],permanent:!!(sel||perm)});
   if(onClick)m.on("click",onClick);
   return m.addTo(lay);
@@ -1028,7 +1111,8 @@ function drawMap(){
     const shape=S.shape&&(S.shape[S.dir]||S.shape.any);
     const lines=shape&&shape.length?shape:[pts.map(s=>s.pos)];
     const lc=famColor(S.route.name)||css("--route");
-    for(const l of lines)L.polyline(l,{color:lc,weight:6,opacity:.85,interactive:false}).addTo(lay);
+    for(const l of lines)L.polyline(l,{color:css("--bg"),weight:10,opacity:.9,interactive:false,lineJoin:"round"}).addTo(lay);   /* 底色描邊，和點雲分開 */
+    for(const l of lines)L.polyline(l,{color:lc,weight:5,opacity:1,interactive:false,lineJoin:"round"}).addTo(lay);
     for(const s of pts)dot(s.pos,S.pick===s.StopUID,esc(zh(s.StopName)),()=>pickStop(s.StopUID,"map"));
     for(const s of pts)for(const b of S.near[S.dir+"|"+s.StopUID]||[])
       L.marker(s.pos,{keyboard:false,icon:L.divIcon({className:"bus",html:"<i></i><em>"+esc(b.PlateNumb)+"</em>",iconSize:[0,0]}),zIndexOffset:500}).addTo(lay);
