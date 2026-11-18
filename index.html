@@ -7,30 +7,38 @@
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="icons/icon-180.png">
-<meta name="theme-color" content="#eef1f4" media="(prefers-color-scheme: light)">
-<meta name="theme-color" content="#0e171d" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#fbfbfa" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0b0c0d" media="(prefers-color-scheme: dark)">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="NextStop">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700&family=Saira+Condensed:wght@600;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700&family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" integrity="sha384-c6Rcwz4e4CITMbu/NBmnNS8yN2sC3cUElMEMfP3vqqKFp7GOYaaBBCqmaWBjmkjb" crossorigin="anonymous" referrerpolicy="no-referrer">
 <style>
-/* 版面：單欄手機看板。左側固定寬度的到站時間牌，右側站名與車輛，底部三個分頁。 */
+/* 版面：單欄手機看板。左側固定寬度的到站時間牌，右側站名與車輛，底部三個分頁。
+   視覺（2026-11-18，使用者選「P 行程線」）：單色＋唯一的重點色（參考 Braun ET66 只有「＝」是黃色）。
+   等寬數字、細線、全大寫小標（參考 Teenage Engineering）；倒數用 10 格燈條表示（參考 Nothing Glyph、Flighty 的進度線）。
+   重點色 --hot 只給「最急的那一班」：常用頁最快到的那張卡、路線頁選取的站。 */
 :root{
-  --bg:#eef1f4; --surface:#ffffff; --ink:#14232e; --muted:#5d6f7c; --line:#d5dce2;
-  --accent:#0b6e8a; --accent-ink:#ffffff;
-  --now:#c8321e; --now-ink:#ffffff; --now-bg:#fde6e1; --soon:#a55b00; --soon-bg:#fff0d6; --ok-bg:#e3eef2; --off-bg:#e9ecef;
-  --f-num:"Saira Condensed","Noto Sans TC",sans-serif;
-  --f-body:"Noto Sans TC","PingFang TC","Microsoft JhengHei",sans-serif;
+  --bg:#f4f4f2; --surface:#ffffff; --ink:#0d0e10; --muted:#676b71; --line:#e3e3e0; --hair:1px; --raise:#ffffff;
+  --accent:#0d0e10; --accent-ink:#ffffff; --route:#5a6068;
+  --now:#c8321e; --now-ink:#ffffff; --now-bg:#fff0ec; --soon:#a65300; --soon-bg:#fff6e8; --ok-bg:transparent; --off-bg:#ecece9; --seg-bg:#ebebe8;
+  --hot:#ff4d1a; --hot-bg:#0d0e10; --hot-ink:#f4f4f2; --hot-mu:#9a9ea4; --cell:#e6e6e3; --hot-cell:#2a2c30;
+  --num:var(--ink);
+  --f-num:"Geist Mono",ui-monospace,monospace;
+  --f-mono:"Geist Mono",ui-monospace,monospace;
+  --f-body:"Geist","Noto Sans TC","PingFang TC","Microsoft JhengHei",sans-serif;
   color-scheme:light;
 }
 @media (prefers-color-scheme:dark){
   :root{
-    --bg:#0e171d; --surface:#17232b; --ink:#e6edf1; --muted:#93a4b0; --line:#2a3943;
-    --accent:#4fb6d1; --accent-ink:#06222b;
-    --now:#ff8a75; --now-ink:#2a0904; --now-bg:#4a1c14; --soon:#ffc266; --soon-bg:#45300c; --ok-bg:#1f3640; --off-bg:#222e36;
+    --bg:#0b0c0d; --surface:#151618; --ink:#ecebe6; --muted:#8d9095; --line:#26282b; --raise:#2a2c30;
+    --accent:#ecebe6; --accent-ink:#0b0c0d; --route:#9aa0a6;
+    --now:#ff5a3c; --now-ink:#2a0400; --now-bg:#2a0f0a; --soon:#ffb020; --soon-bg:#231a08; --off-bg:#1c1d20; --seg-bg:#111214;
+    /* 深色時最急的卡反白：淺底深字，重點色改深一階維持對比 */
+    --hot:#b92c0c; --hot-bg:#ecebe6; --hot-ink:#0d0e10; --hot-mu:#5c6066; --cell:#26282b; --hot-cell:#d4d3ce;
     color-scheme:dark;
   }
 }
@@ -45,54 +53,57 @@ header{position:sticky;top:0;z-index:5;background:var(--bg);padding:12px 16px 0}
 .bar{display:flex;align-items:center;gap:10px;min-height:44px}
 .bar h1{font-size:20px;font-weight:700;margin:0;flex:1;text-wrap:balance}
 .bar h1 small{display:block;font-size:13px;font-weight:400;color:var(--muted)}
-.back{width:44px;height:44px;border-radius:12px;background:var(--surface);border:1px solid var(--line);font-size:20px}
-.meta{display:flex;justify-content:space-between;gap:8px;font-size:12px;color:var(--muted);padding:6px 0 4px;font-variant-numeric:tabular-nums}
-.prog{height:3px;background:var(--line);border-radius:2px;overflow:hidden}
-.prog i{display:block;height:100%;background:var(--accent);width:100%;transition:width 1s linear}
+.back{width:44px;height:44px;border-radius:10px;background:var(--surface);border:var(--hair) solid var(--line);font-size:20px}
+.meta{display:flex;justify-content:space-between;gap:8px;font-size:11px;font-family:var(--f-mono);letter-spacing:.2px;color:var(--muted);padding:6px 0 4px;font-variant-numeric:tabular-nums}
+.prog{height:1px;background:var(--line);overflow:hidden}
+.prog i{display:block;height:100%;background:var(--ink);width:100%;transition:width 1s linear}
 main{flex:1;padding:12px 16px 96px;display:flex;flex-direction:column;gap:12px}
 .demo{background:var(--soon-bg);color:var(--soon);border-radius:10px;padding:10px 12px;font-size:14px}
 .demo button{text-decoration:underline;font-weight:700}
 .err{background:var(--now-bg);color:var(--now);border-radius:10px;padding:10px 12px;font-size:14px}
-.sec{font-size:13px;color:var(--muted);font-weight:500;margin:6px 0 -4px}
-.list{background:var(--surface);border:1px solid var(--line);border-radius:14px;overflow:hidden}
-.row{display:flex;align-items:center;gap:12px;padding:10px 12px;border-top:1px solid var(--line);min-height:60px;width:100%;text-align:left}
+.sec{font:500 11px var(--f-mono);letter-spacing:1.5px;color:var(--muted);margin:6px 0 -4px}
+.list{background:var(--surface);border:var(--hair) solid var(--line);border-radius:12px;overflow:hidden}
+.row{display:flex;align-items:center;gap:12px;padding:10px 12px;border-top:var(--hair) solid var(--line);min-height:58px;width:100%;text-align:left}
 .row:first-child{border-top:0}
-.eta{flex:0 0 78px;height:44px;border-radius:10px;display:flex;flex-direction:column;align-items:center;justify-content:center;background:var(--ok-bg);font-family:var(--f-num);font-size:24px;font-weight:700;line-height:1;font-variant-numeric:tabular-nums}
-.eta small{font-family:var(--f-body);font-size:10px;font-weight:500;margin-top:2px}
-.eta.txt{font-family:var(--f-body);font-size:13px;font-weight:700}
+/* 到站牌：淺色是左側細色條＋等寬數字；深色在後面的 LED 區塊改成點陣面板 */
+.eta{flex:0 0 72px;height:44px;border-radius:2px;display:flex;flex-direction:column;align-items:flex-start;justify-content:center;padding-left:11px;background:var(--ok-bg);box-shadow:inset 2px 0 0 var(--line);color:var(--num);font-family:var(--f-num);font-size:25px;font-weight:500;letter-spacing:-1px;line-height:1;font-variant-numeric:tabular-nums}
+.eta small{font-family:var(--f-mono);font-size:10px;font-weight:500;letter-spacing:1px;margin-top:3px;color:var(--muted)}
+.eta.txt{font-family:var(--f-body);font-size:13px;font-weight:700;letter-spacing:0}
 /* 進站中：閃爍改用外圈光暈，不動文字與底色的不透明度，對比在動畫中保持不變 */
-.eta.now{background:var(--now);color:var(--now-ink);animation:pulse 1.2s ease-in-out infinite}
-.eta.soon{background:var(--soon-bg);color:var(--soon)}
-.eta.off{background:var(--off-bg);color:var(--muted);font-family:var(--f-body);font-size:12px;font-weight:500}
+.eta.now{background:var(--now);color:var(--now-ink);box-shadow:none;border-radius:6px;align-items:center;padding:0;animation:pulse 1.2s ease-in-out infinite}
+.eta.now small{color:inherit}
+.eta.soon{background:transparent;color:var(--soon);box-shadow:inset 3px 0 0 var(--soon)}
+.eta.soon small{color:var(--soon)}
+.eta.off{background:var(--off-bg);color:var(--muted);font-family:var(--f-body);font-size:12px;font-weight:500;letter-spacing:0}
 @keyframes pulse{0%,100%{box-shadow:0 0 0 0 transparent}50%{box-shadow:0 0 0 4px color-mix(in srgb,var(--now) 45%,transparent)}}
 @media (prefers-reduced-motion:reduce){.eta.now{animation:none}.prog i{transition:none}}
 .body{flex:1;min-width:0}
 .body b{display:block;font-weight:500;overflow-wrap:anywhere}
 .body span{display:block;font-size:13px;color:var(--muted);overflow-wrap:anywhere}
-.rt{font-family:var(--f-num);font-size:22px;font-weight:700;letter-spacing:.3px}
+.rt{font-family:var(--f-num);font-size:22px;font-weight:600;letter-spacing:-.5px}
 .tags{display:flex;flex-wrap:wrap;gap:4px;margin-top:3px}
-.tag{font-size:11px;font-weight:700;border-radius:6px;padding:1px 6px;background:var(--accent);color:var(--accent-ink);font-variant-numeric:tabular-nums}
+.tag{font-size:11px;font-weight:600;font-family:var(--f-mono);border-radius:4px;padding:1px 6px;background:var(--accent);color:var(--accent-ink);font-variant-numeric:tabular-nums}
 .tag.left{background:var(--off-bg);color:var(--muted)}
 .tag.last{background:var(--now-bg);color:var(--now)}
 .star{flex:0 0 44px;height:44px;font-size:22px;color:var(--muted);border-radius:10px}
 .star.on{color:var(--soon)}
-.seg{display:flex;gap:6px;background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:4px}
-.seg button{flex:1;min-height:40px;border-radius:9px;font-size:14px;font-weight:500;color:var(--muted);padding:4px 8px}
-.seg button[aria-pressed="true"]{background:var(--accent);color:var(--accent-ink);font-weight:700}
+.seg{display:flex;gap:4px;background:var(--seg-bg);border:var(--hair) solid var(--line);border-radius:10px;padding:3px}
+.seg button{flex:1;min-height:40px;border-radius:7px;font-size:14px;font-weight:500;color:var(--muted);padding:4px 8px}
+.seg button[aria-pressed="true"]{background:var(--raise);color:var(--ink);font-weight:600;box-shadow:0 0 0 var(--hair) var(--line),0 1px 2px rgba(0,0,0,.1)}
 .search{display:flex;gap:8px}
-.search input,.field input{flex:1;min-width:0;height:48px;border-radius:12px;border:1px solid var(--line);background:var(--surface);padding:0 14px;width:100%}
-.btn{height:48px;padding:0 18px;border-radius:12px;background:var(--accent);color:var(--accent-ink);font-weight:700}
-.btn.ghost{background:var(--surface);color:var(--ink);border:1px solid var(--line);font-weight:500}
+.search input,.field input{flex:1;min-width:0;height:48px;border-radius:10px;border:var(--hair) solid var(--line);background:var(--surface);padding:0 14px;width:100%}
+.btn{height:48px;padding:0 18px;border-radius:10px;background:var(--accent);color:var(--accent-ink);font-weight:700}
+.btn.ghost{background:var(--surface);color:var(--ink);border:var(--hair) solid var(--line);font-weight:500}
 .empty{color:var(--muted);font-size:14px;padding:18px 4px}
 .field{display:flex;flex-direction:column;gap:4px;font-size:14px;color:var(--muted)}
-.card{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:14px;display:flex;flex-direction:column;gap:12px}
+.card{background:var(--surface);border:var(--hair) solid var(--line);border-radius:12px;padding:14px;display:flex;flex-direction:column;gap:12px}
 .card ol{margin:0;padding-left:20px;font-size:14px;display:flex;flex-direction:column;gap:6px}
 .card a{color:var(--accent)}
 .acts{display:flex;flex-wrap:wrap;gap:8px}
-nav{position:fixed;left:0;right:0;bottom:0;background:var(--surface);border-top:1px solid var(--line);padding-bottom:env(safe-area-inset-bottom)}
+nav{position:fixed;left:0;right:0;bottom:0;background:color-mix(in srgb,var(--bg) 88%,transparent);-webkit-backdrop-filter:blur(16px);backdrop-filter:blur(16px);border-top:var(--hair) solid var(--line);padding-bottom:env(safe-area-inset-bottom)}
 nav div{max-width:520px;margin:0 auto;display:flex}
 nav button{flex:1;min-height:56px;font-size:14px;color:var(--muted);font-weight:500}
-nav button[aria-current="page"]{color:var(--accent);font-weight:700;box-shadow:inset 0 3px 0 var(--accent)}
+nav button[aria-current="page"]{color:var(--ink);font-weight:600;box-shadow:inset 0 2px 0 var(--ink)}
 /* .body span 會蓋掉 .tag 的顏色，車牌標籤要用較明確的選擇器 */
 .body .tag{display:inline-block;color:var(--accent-ink)}
 .body .tag.left{color:var(--muted)}
@@ -110,33 +121,33 @@ html,body{overflow:hidden}
 #map .leaflet-tile-pane{filter:contrast(.75) brightness(1.06)}
 #map.map-dark .leaflet-tile-pane{filter:invert(1) brightness(.78) contrast(.8)}
 #app{position:fixed;left:0;right:0;bottom:var(--navh);height:var(--sheet,52dvh);max-width:none;min-height:0;margin:0;z-index:10;
-  background:var(--bg);border-radius:20px 20px 0 0;box-shadow:0 -6px 24px rgba(0,0,0,.22);display:flex;flex-direction:column;transition:height .22s ease}
+  background:var(--bg);border-radius:18px 18px 0 0;box-shadow:0 -1px 0 var(--line),0 -16px 40px rgba(0,0,0,.16);display:flex;flex-direction:column;transition:height .22s ease}
 #app.dragging{transition:none}
 .grip{display:block;position:relative;flex:0 0 auto;width:100%;height:22px;touch-action:none;cursor:grab}
 /* 把手看起來只有 22px，觸控範圍往上延伸到 44px（延伸到地圖邊緣，不壓到標題列的按鈕） */
 .grip::after{content:"";position:absolute;left:0;right:0;top:-22px;bottom:0}
-.grip::before{content:"";display:block;width:40px;height:5px;border-radius:3px;background:var(--line);margin:9px auto 0}
+.grip::before{content:"";display:block;width:36px;height:4px;border-radius:2px;background:color-mix(in srgb,var(--muted) 45%,transparent);margin:9px auto 0}
 #app header{position:static;padding-top:0;touch-action:none}
 #app main{overflow:auto;overscroll-behavior:contain;padding-bottom:24px}
 /* main 是 flex 直排；子元素預設會縮小，列表又是 overflow:hidden，會被壓扁裁掉。固定不縮，讓 main 自己捲動 */
 #app main>*{flex-shrink:0}
 nav{z-index:20}
 .row.pick{cursor:pointer}
-.row.sel{background:color-mix(in srgb,var(--accent) 14%,transparent);box-shadow:inset 3px 0 0 var(--accent)}
+.row.sel{background:color-mix(in srgb,var(--hot) 8%,transparent);box-shadow:inset 3px 0 0 var(--hot)}
 .bus{position:relative}
 .bus i{position:absolute;left:-9px;top:-9px;width:18px;height:18px;border-radius:50%;background:var(--ink);border:3px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.4)}
-.bus em{position:absolute;left:0;top:13px;transform:translateX(-50%);white-space:nowrap;font:700 11px/1 var(--f-num);font-style:normal;background:var(--ink);color:var(--bg);padding:3px 5px;border-radius:5px}
+.bus em{position:absolute;left:0;top:13px;transform:translateX(-50%);white-space:nowrap;font:600 11px/1 var(--f-mono);font-style:normal;background:var(--ink);color:var(--bg);padding:3px 5px;border-radius:5px}
 .leaflet-tooltip{font:500 12px var(--f-body)}
 .leaflet-container{font-family:var(--f-body)}
 @media (prefers-reduced-motion:reduce){#app{transition:none}}
 /* 觸控裝置：地圖按鈕放大到 44px */
 @media (pointer:coarse){.leaflet-bar a,.leaflet-bar button{width:44px!important;height:44px!important;line-height:44px!important;font-size:22px!important}}
-.locate{width:34px;height:34px;display:flex;align-items:center;justify-content:center;background:#fff;color:#14232e;font-size:18px;cursor:pointer;border:0}
+.locate{width:34px;height:34px;display:flex;align-items:center;justify-content:center;background:var(--surface);color:var(--ink);font-size:18px;cursor:pointer;border:0}
 .locate[aria-busy="true"]{opacity:.5}
 .me{width:16px;height:16px;margin:-8px 0 0 -8px;border-radius:50%;background:#2a7bf6;border:3px solid #fff;box-shadow:0 0 0 6px rgba(42,123,246,.25)}
 /* 收起狀態也看得到選取的站 */
-.pickline{display:flex;align-items:center;gap:8px;width:100%;margin:6px 0 2px;padding:6px 8px;border-radius:10px;background:var(--surface);border:1px solid var(--line);font-size:14px;text-align:left;min-height:44px}
-.pickline .pill{flex:0 0 auto;min-width:64px;text-align:center;border-radius:7px;padding:3px 6px;font-weight:700;font-size:13px;background:var(--ok-bg)}
+.pickline{display:flex;align-items:center;gap:8px;width:100%;margin:6px 0 2px;padding:6px 8px;border-radius:10px;background:var(--surface);border:var(--hair) solid var(--line);font-size:14px;text-align:left;min-height:44px}
+.pickline .pill{flex:0 0 auto;min-width:64px;text-align:center;border-radius:5px;padding:3px 6px;font-weight:600;font-size:13px;font-family:var(--f-mono);background:var(--off-bg)}
 .pickline .pill.soon{background:var(--soon-bg);color:var(--soon)}
 .pickline .pill.now{background:var(--now);color:var(--now-ink)}
 .pickline .pill.off{background:var(--off-bg);color:var(--muted);font-weight:500}
@@ -152,10 +163,10 @@ nav{z-index:20}
 /* 常用分組 */
 .homebar{display:flex;align-items:center;gap:8px}
 .homebar .seg{flex:1}
-.edit-btn{flex:0 0 auto;min-height:48px;padding:0 14px;border-radius:12px;border:1px solid var(--line);background:var(--surface);font-size:14px;font-weight:500}
+.edit-btn{flex:0 0 auto;min-height:48px;padding:0 14px;border-radius:10px;border:var(--hair) solid var(--line);background:var(--surface);font-size:14px;font-weight:500}
 .edit-btn[aria-pressed="true"]{background:var(--accent);color:var(--accent-ink);border-color:var(--accent);font-weight:700}
 /* 編輯列：名稱獨佔一行，分組按鈕與移除鍵放在下一行，窄螢幕也不會把名稱擠成好幾行 */
-.erow{display:flex;flex-wrap:wrap;align-items:center;gap:8px;padding:10px 12px;border-top:1px solid var(--line)}
+.erow{display:flex;flex-wrap:wrap;align-items:center;gap:8px;padding:10px 12px;border-top:var(--hair) solid var(--line)}
 .erow:first-child{border-top:0}
 .erow .body{flex:1 1 100%;min-width:0}
 .gpick{display:flex;gap:4px;flex:1}
@@ -166,21 +177,62 @@ nav{z-index:20}
 /* 路線條（參考 Bus+）：每列左側一段直線串起整條路線，站是圓點；
    公車「進站中」畫在該站圓點上，「已離站」畫在這一站與下一站之間（列的下緣）。 */
 .strip{position:relative;flex:0 0 14px;align-self:stretch;margin:-10px 0 -10px -4px}
-.strip .ln{position:absolute;left:5px;width:4px;top:0;bottom:0;border-radius:2px;background:var(--rc,var(--accent))}
+.strip .ln{position:absolute;left:6px;width:2px;top:0;bottom:0;border-radius:2px;background:var(--rc,var(--route))}
 .strip.first .ln{top:50%}.strip.last .ln{bottom:50%}
-.strip .st{position:absolute;left:1px;top:50%;width:12px;height:12px;margin-top:-6px;border-radius:50%;background:var(--surface);border:3px solid var(--rc,var(--accent))}
-.row.sel .strip .st{background:var(--rc,var(--accent))}
+.strip .st{position:absolute;left:2px;top:50%;width:10px;height:10px;margin-top:-5px;border-radius:50%;background:var(--surface);border:2px solid var(--rc,var(--route))}
+.row.sel .strip .st{background:var(--rc,var(--route))}
 /* 公車用文字色（深色模式白、淺色模式深），不用紅色：紅色路線的線條也是紅的，會分不出車 */
 .strip .bus{position:absolute;left:-2px;width:18px;height:18px;border-radius:50%;background:var(--ink);border:3px solid var(--surface);z-index:2;box-shadow:0 1px 3px rgba(0,0,0,.35)}
 .strip .bus.at{top:50%;margin-top:-9px}
 .strip .bus.gone{bottom:0;margin-bottom:-9px}
 @media (min-width:1024px){
-  nav{left:16px;right:auto;top:16px;bottom:auto;width:408px;border:1px solid var(--line);border-radius:14px;padding:0;overflow:hidden}
+  nav{left:16px;right:auto;top:16px;bottom:auto;width:408px;border:var(--hair) solid var(--line);border-radius:12px;padding:0;overflow:hidden}
   nav button{min-height:44px}
-  #app{left:16px;right:auto;top:76px;bottom:16px;width:408px;height:auto;border-radius:16px;border:1px solid var(--line);box-shadow:0 8px 28px rgba(0,0,0,.22)}
+  #app{left:16px;right:auto;top:76px;bottom:16px;width:408px;height:auto;border-radius:14px;border:var(--hair) solid var(--line);box-shadow:0 12px 40px rgba(0,0,0,.18)}
   .grip{display:none}
   #app header{padding-top:12px;touch-action:auto}
 }
+/* 地圖按鈕跟面板同一套材質 */
+.leaflet-bar{border:var(--hair) solid var(--line)!important;border-radius:10px!important;box-shadow:0 2px 10px rgba(0,0,0,.12)!important;overflow:hidden}
+.leaflet-bar a,.leaflet-bar a:hover{background:var(--surface);color:var(--ink);border-bottom-color:var(--line)}
+.bar h1{letter-spacing:-.2px}
+/* 路線頁標題是路線號，用數字字型；副標維持內文字型 */
+.bar h1.route-h{font-family:var(--f-num);font-size:26px;font-weight:600;letter-spacing:-1px;color:var(--num)}
+.bar h1.route-h small{font-family:var(--f-body);font-weight:400;letter-spacing:0;color:var(--muted);text-shadow:none}
+/* ---------- 行程卡（常用頁與路線頁選取的站） ----------
+   10 格燈條＝10 分鐘，車越近亮的格子越少；超過 10 分鐘全亮。最急的一張 .hot 反色並用唯一的重點色 */
+.trips{display:flex;flex-direction:column;gap:10px}
+.trip{display:block;width:100%;text-align:left;background:var(--surface);border:var(--hair) solid var(--line);border-radius:18px;padding:15px 16px 13px;color:var(--ink)}
+.trip-h{display:flex;align-items:flex-start;justify-content:space-between;gap:10px}
+.trip-h>span:first-child{min-width:0}
+.trip .rt{display:block;font-size:22px;line-height:1}
+.trip .to{display:block;font-size:12px;color:var(--muted);margin-top:6px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.trip .n{flex:0 0 auto;font:500 52px/.8 var(--f-num);letter-spacing:-3px;font-variant-numeric:tabular-nums}
+.trip .n small{font:500 12px var(--f-body);letter-spacing:0;margin-left:3px;color:var(--muted)}
+.trip .n.txt{font:700 15px/1.2 var(--f-body);letter-spacing:0;padding-top:4px}
+.trip .n.now{background:var(--now);color:var(--now-ink);border-radius:8px;padding:8px 10px;animation:pulse 1.2s ease-in-out infinite}
+.trip .n.sched{color:var(--muted)}
+.cells{display:flex;gap:3px;align-items:center;margin:15px 0 10px}
+.cells i{flex:1;height:6px;border-radius:1px;background:var(--cell)}
+.cells i.on{background:var(--ink)}
+.cells b{flex:0 0 10px;width:10px;height:10px;margin-left:4px;border-radius:50%;border:2px solid currentColor}
+.trip.sched .cells i.on{background:repeating-linear-gradient(90deg,var(--muted) 0 3px,transparent 3px 5px)}
+.trip.off{opacity:.62}.trip.off .cells{opacity:.5}
+.say{display:flex;justify-content:space-between;align-items:baseline;gap:10px;font-size:13px}
+.say em{flex:0 0 auto;font:500 10px var(--f-mono);font-style:normal;letter-spacing:1.5px;color:var(--muted)}
+.trip.hot{background:var(--hot-bg);color:var(--hot-ink);border-color:var(--hot-bg)}
+.trip.hot .to,.trip.hot .say em,.trip.hot .n small{color:var(--hot-mu)}
+.trip.hot .n:not(.now){color:var(--hot)}
+.trip.hot .cells i{background:var(--hot-cell)}.trip.hot .cells i.on{background:var(--hot)}
+.trip.hot .rt{color:inherit!important}
+/* .trip 同時是 .row，蓋掉 .row:first-child 拿掉上框線的規則 */
+.trips .trip{border:var(--hair) solid var(--line)}.trips .trip.hot{border-color:var(--hot-bg)}
+/* 路線頁：選取的站用同一張卡，放在標題列（抽屜收起也看得到） */
+.pickline.trip{margin:6px 0 2px;padding:12px 14px 10px;border-radius:14px;min-height:0;display:block;font-size:inherit}
+.pickline.trip .n{font-size:44px}
+.pickline.trip .cells{margin:10px 0 8px}
+.k{font:500 10px var(--f-mono);letter-spacing:1.5px;color:var(--muted)}
+.trip.hot .k{color:var(--hot-mu)}
 .nomap,.nomap body{overflow:auto}
 .nomap #map,.nomap .grip{display:none}
 .nomap #app{position:static;height:auto;max-width:520px;margin:0 auto;min-height:100%;border-radius:0;box-shadow:none;border:0;width:auto}
@@ -348,7 +400,27 @@ const etaBox=e=>{const f=fmt(e);
   return '<div class="eta '+f.cls+'" role="img" aria-label="'+esc(label)+'">'+(f.live?LIVE_ICON:"")+esc(f.text)+(f.sub?"<small>"+f.sub+"</small>":"")+"</div>"};
 const rank=e=>{const t=e&&e.EstimateTime;return (t!=null&&t>=0&&(e.StopStatus==null||e.StopStatus<=1))?t:1e9+((e&&e.StopStatus)||9)};
 function better(a,b){return !a||rank(b)<rank(a)?b:a}
-
+/* 有倒數（即時或表定）時回傳分鐘數，否則 null；雷達與時間比例路線用 */
+const etaMin=e=>{const t=e&&e.EstimateTime;return t!=null&&t>=0&&(e.StopStatus==null||e.StopStatus<=1)?t/60:null};
+/* 行程卡：一句話狀態只依到站分鐘分級（沒有步行時間資料，不猜「何時出門」） */
+function tripSay(f,m){
+  if(f.cls.startsWith("now"))return "進站中，車就在站上。";
+  if(f.cls==="sched")return "還沒發車，照時刻表推算。";
+  if(m==null)return f.text+"。";
+  if(m<=3)return "快到了，準備上車。";
+  if(m<=8)return "還有一點時間。";
+  return "還早，可以慢慢來。";
+}
+const cells=m=>{const on=m==null?0:Math.min(10,Math.max(0,Math.ceil(m-0.01)));let h='<span class="cells" aria-hidden="true">';for(let i=0;i<10;i++)h+='<i'+(i<on?' class="on"':"")+"></i>";return h+"<b></b></span>"};
+function tripCard(o){
+  const f=fmt(o.e),m=etaMin(o.e),num=typeof f.text==="number",cls=f.cls.split(" ")[0];
+  const big=num?'<span class="n'+(cls==="sched"?" sched":"")+'">'+f.text+"<small>分</small></span>":'<span class="n txt'+(cls==="now"?" now":"")+'">'+esc(f.text)+"</span>";
+  const badge=[f.live?"LIVE":cls==="sched"?"表定":"",o.e&&o.e.IsLastBus?"末班車":""].filter(Boolean).join(" · ");
+  const label=o.label+"，"+etaLabel(f)+f.text+(num?" 分鐘":"")+(o.e&&o.e.IsLastBus?"，末班車":"");
+  return '<'+o.tag+' class="'+o.cls+" trip"+(o.hot?" hot":"")+(cls==="sched"||cls==="off"?" "+cls:"")+'" '+o.attrs+' aria-label="'+esc(label)+'">'+
+    '<span class="trip-h"><span>'+o.head+"</span>"+big+"</span>"+cells(f.cls==="off"?null:m)+
+    '<span class="say"><span>'+esc(tripSay(f,m))+"</span><em>"+esc(badge)+"</em></span></"+o.tag+">";
+}
 /* ---------- 資料載入 ---------- */
 async function loadHome(stale){
   const rs=shownFavs().filter(f=>f.type==="rs");
@@ -625,13 +697,14 @@ function render(){
   if(S.view==="search")title="搜尋路線或站牌";
   if(S.view==="settings")title="設定";
   let h='<div class="bar">'+(back?'<button class="back" data-act="back" aria-label="返回">←</button>':"")+
-    '<h1'+(S.view==="route"?rcStyle(S.route.name):"")+'>'+esc(title)+(sub?"<small>"+esc(sub)+"</small>":"")+"</h1>"+
+    '<h1'+(S.view==="route"?' class="route-h"'+rcStyle(S.route.name):"")+'>'+esc(title)+(sub?"<small>"+esc(sub)+"</small>":"")+"</h1>"+
     (S.view==="stop"?starBtn({type:"st",name:S.stopName,pos:S.stopPos.length?S.stopPos:undefined}):"")+"</div>";
   if(S.view==="route"&&S.pick&&S.stops&&S.stops[S.dir]){
     const s=S.stops[S.dir].Stops.find(x=>x.StopUID===S.pick);
     if(s){
-      const f=fmt(S.eta[S.dir+"|"+s.StopUID]),cls=f.cls.split(" ")[0];
-      h+='<button class="pickline" data-act="topick" data-uid="'+esc(s.StopUID)+'" aria-label="捲到 '+esc(zh(s.StopName))+'"><span class="pill '+cls+'">'+esc(f.text)+(f.sub==="分"?" 分":f.sub==="表定"?" 分（表定）":"")+'</span><b>'+esc(zh(s.StopName))+'</b></button>';
+      const ss=S.stops[S.dir].Stops,tw=zh(ss[ss.length-1].StopName),e=S.eta[S.dir+"|"+s.StopUID];
+      h+=tripCard({tag:"button",cls:"pickline",hot:true,e,attrs:'data-act="topick" data-uid="'+esc(s.StopUID)+'"',
+        label:"捲到 "+zh(s.StopName),head:'<span class="k">選取的站 · 往 '+esc(tw)+'</span><b class="to" style="font-size:17px;color:inherit;font-weight:600">'+esc(zh(s.StopName))+"</b>"});
     }
   }
   if(live())h+='<div class="meta"><span>'+(S.updated?"更新於 "+hm(S.updated)+":"+p2(S.updated.getSeconds()):"載入中")+
@@ -688,12 +761,15 @@ function vHome(){
   h+="</div>";
   if(rs.length){
     const sorted=rs.slice().sort((a,b)=>rank(S.home[favId(a)])-rank(S.home[favId(b)]));
-    h+='<div class="sec">常用路線與站牌</div><div class="list">';
-    for(const f of sorted){
-      const e=S.home[favId(f)];
-      h+='<button class="row" data-act="route" data-city="'+esc(f.city)+'" data-name="'+esc(f.route)+'" data-dir="'+f.dir+'" data-uid="'+esc(f.stopUID)+'">'+etaBox(e)+
-        '<div class="body"><b><span class="rt"'+(famColor(f.route)?' style="display:inline;color:'+famColor(f.route)+'"':' style="display:inline;color:inherit"')+'>'+esc(f.route)+"</span>　"+esc(f.stopName)+"</b><span>往 "+esc(f.toward)+"</span>"+tags(e)+"</div></button>";
-    }
+    h+='<div class="sec">常用路線與站牌</div><div class="trips">';
+    /* 最快到的那一班（有倒數的才算）是唯一用重點色的卡 */
+    sorted.forEach((f,i)=>{
+      const e=S.home[favId(f)],c=famColor(f.route);
+      h+=tripCard({tag:"button",cls:"row",e,hot:i===0&&etaMin(e)!=null&&fmt(e).cls!=="sched",
+        attrs:'data-act="route" data-city="'+esc(f.city)+'" data-name="'+esc(f.route)+'" data-dir="'+f.dir+'" data-uid="'+esc(f.stopUID)+'"',
+        label:f.route+" 往 "+f.toward+"，"+f.stopName,
+        head:'<span class="rt"'+(c?' style="color:'+c+'"':"")+'>'+esc(f.route)+'</span><span class="to">往 '+esc(f.toward)+" · "+esc(f.stopName)+"</span>"});
+    });
     h+="</div>";
   }
   if(st.length){
@@ -950,7 +1026,7 @@ function drawMap(){
     const cur=S.stops[S.dir],pts=cur.Stops.filter(s=>s.pos);
     const shape=S.shape&&(S.shape[S.dir]||S.shape.any);
     const lines=shape&&shape.length?shape:[pts.map(s=>s.pos)];
-    const lc=famColor(S.route.name)||css("--accent");
+    const lc=famColor(S.route.name)||css("--route");
     for(const l of lines)L.polyline(l,{color:lc,weight:6,opacity:.85,interactive:false}).addTo(lay);
     for(const s of pts)dot(s.pos,S.pick===s.StopUID,esc(zh(s.StopName)),()=>pickStop(s.StopUID,"map"));
     for(const s of pts)for(const b of S.near[S.dir+"|"+s.StopUID]||[])

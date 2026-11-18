@@ -340,6 +340,38 @@ test("定位：路線頁按 ◎ 會選取離我最近的站",async()=>{
   ok(/中正紀念堂/.test($f(".pickline").textContent),"標題列顯示選取的站");
 });
 
+test("行程卡（路線頁）：選取的站顯示大字倒數、10 格燈條與一句話",async()=>{
+  await boot({storage:CRED});
+  await openRoute("262",0);
+  ev('pickStop("S3","list")');await sleep(50);
+  const c=$f(".pickline.trip");
+  ok(c&&c.classList.contains("hot"),"選取的站用重點色卡");
+  eq(c.querySelector(".n").firstChild.textContent,"7","400 秒四捨五入為 7 分");
+  eq(c.querySelectorAll(".cells i.on").length,7,"6.7 分亮 7 格");
+  ok(/中正紀念堂/.test(c.getAttribute("aria-label"))&&/即時預估：7 分鐘/.test(c.getAttribute("aria-label")),"輔助說明："+c.getAttribute("aria-label"));
+  eq(c.querySelector(".say span").textContent,"還有一點時間。","4–8 分的說法");
+  ok(!$f("#main .marq")&&!$f("#main .radar"),"舊的跑馬燈與雷達已移除");
+});
+
+test("行程卡（常用頁）：依到站排序，只有最快到的一張用重點色；表定與末班已過不亮重點色",async()=>{
+  const mk=(uid,name)=>({type:"rs",city:"Taipei",route:"262",routeUID:"TPE262",dir:0,stopUID:uid,stopName:name,toward:"信義永康街口"});
+  const favs=[mk("S3","中正紀念堂"),mk("S0","北門"),mk("S4","東門"),mk("S2","臺大醫院"),mk("S1","臺北車站(忠孝)")];
+  await boot({storage:Object.assign({bus_favs:JSON.stringify(favs)},CRED)});
+  await until(()=>$f("#main .trips .trip .n:not(:empty)")&&ev("Object.keys(S.home).length"),6000,"常用載入");
+  await sleep(50);
+  const cs=$$f("#main .trips .trip");
+  eq(cs.map(c=>c.dataset.uid),["S0","S1","S3","S2","S4"],"進站中→2.5 分→6.7 分→表定 12 分→末班車已過");
+  eq(cs.map(c=>c.classList.contains("hot")?1:0).join(""),"10000","只有第一張是重點色");
+  ok(cs[0].querySelector(".n.now"),"進站中用紅底");
+  eq(cs[0].querySelector(".say span").textContent,"進站中，車就在站上。","進站中的說法");
+  eq(cs[1].querySelector(".say span").textContent,"快到了，準備上車。","3 分內的說法");
+  ok(cs[3].classList.contains("sched")&&/表定/.test(cs[3].querySelector(".say em").textContent),"表定卡");
+  ok(cs[4].classList.contains("off")&&cs[4].querySelectorAll(".cells i.on").length===0,"沒有倒數不亮燈");
+  cs[1].click();
+  await until(()=>ev("S.view==='route'&&S.stops"),6000,"進路線");
+  eq(ev("S.pick"),"S1","進路線後選取該站");
+});
+
 test("定位被拒：顯示權限說明",async()=>{
   await boot({storage:CRED,geo:"deny"});
   click("#locate");
