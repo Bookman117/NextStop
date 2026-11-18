@@ -409,6 +409,11 @@ test("公車位置推算：依下一站即時秒數沿路線前進；沒有即�
   const later=ev("busFeatures(Date.now()+60000)[0].geometry.coordinates");
   const a=ev("lnglat(S.stops[0].Stops[1].pos)"),b=ev("lnglat(S.stops[0].Stops[2].pos)");
   ok(later[0]>Math.min(a[0],b[0])-1e-9&&later[0]<Math.max(a[0],b[0])+1e-9&&String(later)!==String(a),"有即時預估後，60 秒時在第 2、3 站之間："+later);
+  /* 列表路線條：同一台車從第 2 站的圓點往第 3 站移動 */
+  const stripTop=ms=>{ev("placeStripBuses(busStates(Date.now()+"+ms+"))");return parseFloat($f('.strip .bus[data-plate="AAA-001"]').style.top)};
+  const t0=stripTop(0),t60=stripTop(60000),t120=stripTop(120000),row=$f('.strip .bus[data-plate="AAA-001"]').closest(".row");
+  ok(t0<t60&&t60<t120,"路線條上的車隨時間往下走："+[t0,t60,t120]);
+  ok(Math.abs((t120-t0)-(row.offsetHeight/2+row.nextElementSibling.offsetHeight/2))<1.5,"走完剛好到下一站的圓點："+(t120-t0));
   eq(ev('map.getPaintProperty("me","circle-color")'),getComputedStyle(win.document.documentElement).getPropertyValue("--me").trim(),"定位點用 --me，和站牌、公車分開");
 });
 

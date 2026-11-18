@@ -337,15 +337,16 @@ function queued(fn,stale){
 /* 站序、路線起訖站這類靜態資料快取在 localStorage，7 天內不重抓 */
 function cacheGet(k,ttl){const c=store.get(k,null);return c&&Date.now()-c.t<ttl?c.v:null}
 function cacheSet(k,v){store.set(k,{t:Date.now(),v})}
-function tfetch(url,opt){
-  const c=new AbortController(),t=setTimeout(()=>c.abort(),12000);
+function tfetch(url,opt,ms){
+  const c=new AbortController(),t=setTimeout(()=>c.abort(),ms||12000);
   return fetch(url,Object.assign({signal:c.signal},opt)).finally(()=>clearTimeout(t));
 }
 async function getToken(force){
   const t=store.get("tdx_tok",null);
   if(!force&&t&&t.exp>Date.now()+60000)return t.v;
   const body=new URLSearchParams({grant_type:"client_credentials",client_id:cred.id,client_secret:cred.secret});
-  const r=await tfetch(TOKEN_URL,{method:"POST",headers:{"content-type":"application/x-www-form-urlencoded"},body});
+  /* 驗證伺服器有時要 5 到 12 秒才回應（2026-11-19 實測），token 請求的逾時放寬到 30 秒；資料 API 維持 12 秒 */
+  const r=await tfetch(TOKEN_URL,{method:"POST",headers:{"content-type":"application/x-www-form-urlencoded"},body},30000);
   if(!r.ok){const e=new Error("auth");e.status=401;throw e}
   const j=await r.json();
   store.set("tdx_tok",{v:j.access_token,exp:Date.now()+(j.expires_in||3600)*1000});
@@ -364,7 +365,7 @@ function errText(e){
   if(e.status===401)return "金鑰驗證失敗。請到「設定」檢查 Client ID 與 Client Secret。";
   if(e.status===429)return "TDX 回應呼叫太頻繁（免費方案每分鐘 5 次），下一輪會自動重試。";
   if(e.status)return "TDX 回應錯誤（HTTP "+e.status+"），下一輪會自動重試。";
-  if(e.name==="AbortError")return "連線逾時（12 秒）。請檢查網路後再試。";
+  if(e.name==="AbortError")return "TDX 太久沒有回應，可能是網路或 TDX 伺服器忙碌，請稍後再試。";
   if(!navigator.onLine)return "目前離線，看不到即時到站時間。恢復連線後會自動更新。";
   return "連不上 TDX。若你是在聊天室的檔案預覽裡開啟，預覽環境會擋掉對外連線，請改用手機或電腦瀏覽器直接開啟檔案。";
 }
@@ -727,6 +728,7 @@ function render(){
   m+=({home:vHome,search:vSearch,route:vRoute,stop:vStop,settings:vSettings})[S.view]();
   $("main").innerHTML=m;
   drawMap();
+  if(S.view==="route")tickBus();   /* 列表重畫後，把路線條上的車放回推算位置 */
   if(S.scrollPick&&S.view==="route"&&S.stops){
     const row=document.querySelector('[data-act="pick"][data-uid="'+CSS.escape(S.scrollPick)+'"]');
     S.scrollPick=null;if(row)row.scrollIntoView({block:"center"});
@@ -826,7 +828,7 @@ function vRoute(){
     const k=S.dir+"|"+s.StopUID,e=S.eta[k],buses=S.near[k]||[];
     const at=buses.filter(b=>b.A2EventType!==0),gone=i<n-1?buses.filter(b=>b.A2EventType===0):[];
     const strip='<span class="strip'+(i===0?" first":"")+(i===n-1?" last":"")+'" aria-hidden="true"><span class="ln"></span><span class="st"></span>'+
-      (at.length?'<span class="bus at"></span>':"")+(gone.length?'<span class="bus gone"></span>':"")+"</span>";
+      at.concat(gone).map(b=>'<span class="bus '+(b.A2EventType===0?"gone":"at")+' mv" data-uid="'+esc(s.StopUID)+'" data-plate="'+esc(b.PlateNumb)+'"></span>').join("")+"</span>";
     const f={type:"rs",city:S.route.city,route:S.route.name,routeUID:cur.RouteUID,dir:S.dir,stopUID:s.StopUID,stopName:zh(s.StopName),toward:tw,pos:s.pos};
     const sel=S.pick===s.StopUID;
     h+='<div class="row pick'+(sel?" sel":"")+'" data-act="pick" data-uid="'+esc(s.StopUID)+'" tabindex="0" role="button" aria-pressed="'+sel+'" aria-label="'+esc(zh(s.StopName))+'，在地圖上顯示">'+etaBox(e)+strip+'<div class="body"><b>'+esc(zh(s.StopName))+"</b>"+tags(e,S.near[k])+"</div>"+starBtn(f)+"</div>";
@@ -847,8 +849,8 @@ function vStop(){
 }
 function vSettings(){
   return '<div class="card" id="cf">'+
-    '<label class="field" for="cid">Client ID<input id="cid" autocomplete="off" autocapitalize="off" spellcheck="false" value="'+esc(cred?cred.id:"")+'"></label>'+
-    '<label class="field" for="csec">Client Secret<input id="csec" type="password" autocomplete="off" value="'+esc(cred?cred.secret:"")+'"></label>'+
+    '<label class="field" for="cid">Client ID<input id="cid" autocomplete="off" autocapitalize="off" spellcheck="false" value="'+esc(S.form?S.form.id:cred?cred.id:"")+'"></label>'+
+    '<label class="field" for="csec">Client Secret<input id="csec" type="password" autocomplete="off" value="'+esc(S.form?S.form.secret:cred?cred.secret:"")+'"></label>'+
     '<div class="acts"><button type="button" class="btn" data-act="save">儲存並測試連線</button>'+(cred?'<button type="button" class="btn ghost" data-act="clear">清除金鑰</button>':"")+"</div>"+
     (S.msg?'<div class="'+(S.msgOk?"demo":"err")+'" role="status">'+esc(S.msg)+"</div>":"")+
     '<div style="font-size:13px;color:var(--muted)">金鑰只存在這台裝置的瀏覽器裡，並且只會送往 tdx.transportdata.tw。</div></div>'+
@@ -913,11 +915,12 @@ async function doAction(kind){
   }else if(kind==="save"){
     const id=$("cid").value.trim(),secret=$("csec").value.trim();
     if(!id||!secret){S.msg="兩個欄位都要填。";S.msgOk=false;render();return}
-    const old=cred;cred={id,secret};store.del("tdx_tok");
+    const old=cred;cred={id,secret};store.del("tdx_tok");S.form={id,secret};   /* 失敗時保留剛填的值，不要清空欄位 */
     S.msg="測試連線中";S.msgOk=true;render();
     try{
       await getToken(true);store.set("tdx_cred",cred);
       S.msg="連線成功。回到「常用」或「搜尋」就會看到真實資料。";S.msgOk=true;
+      S.form=null;
     }catch(e){cred=old;S.msg=errText(e);S.msgOk=false}
     render();
   }
@@ -1028,8 +1031,11 @@ function initMap(){
   }catch(e){map=null;document.documentElement.classList.add("nomap");return}
   map.touchZoomRotate.disableRotation();
   map.on("styleimagemissing",e=>{if(e.id==="dots"&&!map.hasImage("dots"))map.addImage("dots",dotsImage(),{pixelRatio:2})});
-  map.on("style.load",()=>{addOverlays();mapReady=true;drawMap()});
-  const apply=async()=>{mapReady=false;map.setStyle(await mapStyle(),{diff:false})};apply();
+  /* 建構時先給一個只有底色的暫時樣式；真正的樣式套上後（styled）才算就緒，避免在換樣式的空檔操作圖層 */
+  let styled=false;
+  const foldAttr=()=>{const el=map.getContainer().querySelector(".maplibregl-ctrl-attrib.maplibregl-compact-show");if(el)el.classList.remove("maplibregl-compact-show")};
+  map.on("style.load",()=>{if(!styled)return;addOverlays();mapReady=true;drawMap();setTimeout(foldAttr,0)});
+  const apply=async()=>{mapReady=false;const st=await mapStyle();styled=true;map.setStyle(st,{diff:false})};apply();
   DARK.addEventListener("change",()=>{apply();render()});
   map.addControl(new maplibregl.NavigationControl({showCompass:false}),"top-right");
   map.addControl({onAdd(){
@@ -1150,25 +1156,37 @@ function busProgress(kind,eta,elapsed,segLen){
   const f0=kind===0?Math.max(0,1-eta/Math.max(eta,segLen/BUS_V)):0;
   return Math.min(1,f0+(1-f0)*Math.max(0,elapsed)/eta);
 }
-function busFeatures(now){
+/* 每台車目前的推算狀態：i＝出發站序號（只算有座標的站），f＝往下一站走了多少（null 表示不推算） */
+function busStates(now){
   const cur=S.stops&&S.stops[S.dir];if(!cur)return [];
   const pts=cur.Stops.filter(s=>s.pos),out=[],el=S.updated?(now-S.updated)/1000:0;
   pts.forEach((s,i)=>{for(const b of S.near[S.dir+"|"+s.StopUID]||[]){
-    let p=s.pos,moving=false;
+    let p=s.pos,f=null;
     const nx=pts[i+1],e=nx&&S.eta[S.dir+"|"+nx.StopUID],live=e&&e.EstimateTime!=null&&(e.StopStatus==null||e.StopStatus===0);
     if(busPath&&nx&&live){
-      const L=busPath.cum[busPath.at[i+1]]-busPath.cum[busPath.at[i]],f=busProgress(b.A2EventType===0?0:1,e.EstimateTime,el,L);
-      const q=f==null?null:alongPath(busPath,i,f);if(q){p=q;moving=f<1}
+      const L=busPath.cum[busPath.at[i+1]]-busPath.cum[busPath.at[i]];f=busProgress(b.A2EventType===0?0:1,e.EstimateTime,el,L);
+      const q=f==null?null:alongPath(busPath,i,f);if(q)p=q;else f=null;
     }
-    out.push(pt(p,{plate:b.PlateNumb,moving}));
+    out.push({uid:s.StopUID,plate:b.PlateNumb,p,f});
   }});
   return out;
 }
+function busFeatures(now){return busStates(now).map(b=>pt(b.p,{plate:b.plate,moving:b.f!=null&&b.f<1}))}
+/* 列表路線條上的車：放在出發站那一列，依 f 從本站圓點往下一站圓點移動（兩列中心的距離＝本列半高＋下一列半高） */
+function placeStripBuses(states){
+  for(const el of document.querySelectorAll(".strip .bus.mv")){
+    const b=states.find(x=>x.uid===el.dataset.uid&&x.plate===el.dataset.plate);if(!b||b.f==null)continue;
+    const row=el.closest(".row"),next=row&&row.nextElementSibling,strip=el.parentNode;
+    const h=strip.offsetHeight,d=h/2+(next?next.offsetHeight/2:0);
+    el.style.margin="0";el.style.bottom="auto";el.style.top=(h/2+b.f*d-9)+"px";
+  }
+}
 function tickBus(){
   clearTimeout(busTimer);busTimer=0;
-  if(!map||!mapReady||S.view!=="route"||document.hidden)return;
-  const f=busFeatures(Date.now());setData("bus",f);lastBus=f.length;
-  if(f.some(x=>x.properties.moving))busTimer=setTimeout(tickBus,CALM.matches?5000:250);
+  if(S.view!=="route"||!S.stops||document.hidden)return;
+  const st=busStates(Date.now()),f=st.map(b=>pt(b.p,{plate:b.plate,moving:b.f!=null&&b.f<1}));
+  setData("bus",f);lastBus=f.length;placeStripBuses(st);
+  if(st.some(b=>b.f!=null&&b.f<1))busTimer=setTimeout(tickBus,CALM.matches?5000:250);
 }
 document.addEventListener("visibilitychange",()=>{if(!document.hidden)tickBus()});
 function drawMap(){
