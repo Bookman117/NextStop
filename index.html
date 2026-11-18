@@ -26,7 +26,7 @@
   --accent:#0d0e10; --accent-ink:#ffffff; --route:#5a6068;
   --now:#c8321e; --now-ink:#ffffff; --now-bg:#fff0ec; --soon:#a65300; --soon-bg:#fff6e8; --ok-bg:transparent; --off-bg:#ecece9; --seg-bg:#ebebe8;
   --hot:#ff4d1a; --hot-bg:#0d0e10; --hot-ink:#f4f4f2; --hot-mu:#9a9ea4; --cell:#e6e6e3; --hot-cell:#2a2c30;
-  --num:var(--ink); --dot:13,14,16; --map-hot:#ff4d1a;
+  --num:var(--ink); --dot:13,14,16; --map-hot:#ff4d1a; --me:#1f6fe5; --me-rgb:31,111,229;
   --f-num:"Geist Mono",ui-monospace,monospace;
   --f-mono:"Geist Mono",ui-monospace,monospace;
   --f-body:"Geist","Huninn","Noto Sans TC","PingFang TC","Microsoft JhengHei",sans-serif;
@@ -38,7 +38,7 @@
     --accent:#ecebe6; --accent-ink:#0b0c0d; --route:#9aa0a6;
     --now:#ff5a3c; --now-ink:#2a0400; --now-bg:#2a0f0a; --soon:#ffb020; --soon-bg:#231a08; --off-bg:#1c1d20; --seg-bg:#111214;
     /* 深色時最急的卡反白：淺底深字，重點色改深一階維持對比 */
-    --dot:236,235,230; --map-hot:#ff5a3c; --ctrl-icon:invert(1); --attrib-btn:invert(1);
+    --dot:236,235,230; --map-hot:#ff5a3c; --me:#5b9dff; --me-rgb:91,157,255; --ctrl-icon:invert(1); --attrib-btn:invert(1);
     --hot:#b92c0c; --hot-bg:#ecebe6; --hot-ink:#0d0e10; --hot-mu:#5c6066; --cell:#26282b; --hot-cell:#d4d3ce;
     color-scheme:dark;
   }
@@ -67,18 +67,25 @@ main{flex:1;padding:12px 16px 96px;display:flex;flex-direction:column;gap:12px}
 .list{background:var(--surface);border:var(--hair) solid var(--line);border-radius:12px;overflow:hidden}
 .row{display:flex;align-items:center;gap:12px;padding:10px 12px;border-top:var(--hair) solid var(--line);min-height:58px;width:100%;text-align:left}
 .row:first-child{border-top:0}
-/* 到站牌：淺色是左側細色條＋等寬數字；深色在後面的 LED 區塊改成點陣面板 */
-.eta{flex:0 0 72px;height:44px;border-radius:2px;display:flex;flex-direction:column;align-items:flex-start;justify-content:center;padding-left:11px;background:var(--ok-bg);box-shadow:inset 2px 0 0 var(--line);color:var(--num);font-family:var(--f-num);font-size:25px;font-weight:500;letter-spacing:-1px;line-height:1;font-variant-numeric:tabular-nums}
-.eta small{font-family:var(--f-mono);font-size:10px;font-weight:500;letter-spacing:1px;margin-top:3px;color:var(--muted)}
-.eta.txt{font-family:var(--f-body);font-size:13px;font-weight:700;letter-spacing:0}
-/* 進站中：閃爍改用外圈光暈，不動文字與底色的不透明度，對比在動畫中保持不變 */
-.eta.now{background:var(--now);color:var(--now-ink);box-shadow:none;border-radius:6px;align-items:center;padding:0;animation:pulse 1.2s ease-in-out infinite}
-.eta.now small{color:inherit}
-.eta.soon{background:transparent;color:var(--soon);box-shadow:inset 3px 0 0 var(--soon)}
-.eta.soon small{color:var(--soon)}
-.eta.off{background:var(--off-bg);color:var(--muted);font-family:var(--f-body);font-size:12px;font-weight:500;letter-spacing:0}
+/* 列表到站牌：數字與單位同一基線，右上小訊號圖示表示即時預估，下方迷你燈條和行程卡同義 */
+.eta{flex:0 0 66px;position:relative;display:flex;flex-direction:column;justify-content:center;min-height:44px;color:var(--ink);font-variant-numeric:tabular-nums}
+.eta .n{font:500 24px/1 var(--f-num);letter-spacing:-1.5px;white-space:nowrap}
+.eta .n small{font:400 11px var(--f-body);letter-spacing:0;color:var(--muted);margin-left:2px}
+.eta .live{position:absolute;top:2px;right:6px;width:9px;height:9px;color:var(--muted)}
+.eta .mc{display:flex;gap:1.5px;margin-top:7px;width:52px}
+.eta .mc i{flex:1;height:3px;border-radius:.5px;background:var(--cell)}
+.eta .mc i.on{background:var(--ink)}
+.eta.soon .n,.eta.soon .n small,.eta.soon .live{color:var(--soon)}
+.eta.soon .mc i.on{background:var(--soon)}
+.eta.sched .n{color:var(--muted)}
+.eta.sched .mc i.on{background:repeating-linear-gradient(90deg,var(--muted) 0 1.5px,transparent 1.5px 3px)}
+.eta.off .n,.eta.txt .n{font:500 12px/1.3 var(--f-body);letter-spacing:0;color:var(--muted);white-space:normal}
+/* 進站中：紅底小膠囊（需求：1 分鐘內紅底閃爍），閃爍用外圈光暈，不動不透明度，對比在動畫中保持不變 */
+.eta.now{align-items:flex-start}
+.eta.now .n{background:var(--now);color:var(--now-ink);border-radius:6px;padding:7px 8px;font:700 12px/1 var(--f-body);animation:pulse 1.2s ease-in-out infinite}
+.eta.now .live{display:none}
 @keyframes pulse{0%,100%{box-shadow:0 0 0 0 transparent}50%{box-shadow:0 0 0 4px color-mix(in srgb,var(--now) 45%,transparent)}}
-@media (prefers-reduced-motion:reduce){.eta.now{animation:none}.prog i{transition:none}}
+@media (prefers-reduced-motion:reduce){.eta.now .n{animation:none}.prog i{transition:none}}
 .body{flex:1;min-width:0}
 .body b{display:block;font-weight:500;overflow-wrap:anywhere}
 .body span{display:block;font-size:13px;color:var(--muted);overflow-wrap:anywhere}
@@ -161,10 +168,6 @@ nav{z-index:20}
 .near-btn{width:100%}
 .dist{flex:0 0 auto;font-size:13px;color:var(--muted);font-variant-numeric:tabular-nums}
 /* 即時與表定：即時預估在右上角加訊號圖示；表定（還沒發車、照時刻表推算）用虛線框，字樣寫「表定」 */
-.eta{position:relative}
-.eta .live{position:absolute;top:3px;right:4px;width:11px;height:11px;opacity:.85}
-.eta.sched{background:transparent;border:1.5px dashed var(--line);color:var(--ink)}
-.eta.sched small{color:var(--muted)}
 .pickline .pill.sched{background:transparent;border:1.5px dashed var(--line)}
 /* 常用分組 */
 .homebar{display:flex;align-items:center;gap:8px}
@@ -399,9 +402,11 @@ function famColor(name){
 const rcStyle=name=>{const c=famColor(name);return c?' style="--rc:'+c+';color:'+c+'"':""};
 const LIVE_ICON='<svg class="live" viewBox="0 0 12 12" aria-hidden="true"><circle cx="2" cy="10" r="1.6" fill="currentColor"/><path d="M2 6.2a3.8 3.8 0 0 1 3.8 3.8M2 2.4A7.6 7.6 0 0 1 9.6 10" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>';
 const etaLabel=f=>f.live?"即時預估：":f.cls==="sched"?"表定推算：":"";
-const etaBox=e=>{const f=fmt(e);
+/* 列表到站牌（2026-11-19 改版，和行程卡同一種語言）：大數字＋小單位、即時訊號小圖示，下方 10 格迷你燈條（一格一分鐘） */
+const miniCells=m=>{const on=m==null?0:Math.min(10,Math.max(0,Math.ceil(m-0.01)));let h='<span class="mc" aria-hidden="true">';for(let i=0;i<10;i++)h+='<i'+(i<on?' class="on"':"")+"></i>";return h+"</span>"};
+const etaBox=e=>{const f=fmt(e),num=typeof f.text==="number";
   const label=etaLabel(f)+f.text+(f.sub==="分"||f.sub==="表定"?" 分鐘":f.sub?"，"+f.sub:"");
-  return '<div class="eta '+f.cls+'" role="img" aria-label="'+esc(label)+'">'+(f.live?LIVE_ICON:"")+esc(f.text)+(f.sub?"<small>"+f.sub+"</small>":"")+"</div>"};
+  return '<div class="eta '+f.cls+'" role="img" aria-label="'+esc(label)+'"><span class="n">'+esc(f.text)+(f.sub?"<small>"+(f.cls==="soon"?"分":f.sub)+"</small>":"")+"</span>"+(f.live?LIVE_ICON:"")+(num?miniCells(etaMin(e)):"")+"</div>"};
 const rank=e=>{const t=e&&e.EstimateTime;return (t!=null&&t>=0&&(e.StopStatus==null||e.StopStatus<=1))?t:1e9+((e&&e.StopStatus)||9)};
 function better(a,b){return !a||rank(b)<rank(a)?b:a}
 /* 有倒數（即時或表定）時回傳分鐘數，否則 null；雷達與時間比例路線用 */
@@ -973,8 +978,10 @@ function addOverlays(){
     "circle-stroke-color":["match",["get","k"],"stop",route,P.bg],"circle-stroke-width":["match",["get","k"],"stop",2,3]}});
   L({id:"stop-label",type:"symbol",source:"stops",filter:["!=",["get","k"],"stop"],layout:{"text-field":["get","label"],"text-size":12,"text-anchor":"bottom","text-offset":[0,-1],"text-max-width":12},
     paint:{"text-color":ink,"text-halo-color":P.bg,"text-halo-width":2}});
-  L({id:"me-acc",type:"circle",source:"me",paint:{"circle-color":ink,"circle-opacity":.06,"circle-radius":["interpolate",["exponential",2],["zoom"],0,["get","r0"],22,["*",["get","r0"],4194304]]}});
-  L({id:"me",type:"circle",source:"me",paint:{"circle-radius":6,"circle-color":ink,"circle-stroke-color":P.bg,"circle-stroke-width":3}});
+  /* 我的位置用藍色（--me），和墨色的站牌、橘紅的公車分開；波紋也用同一色 */
+  const meC=css("--me");
+  L({id:"me-acc",type:"circle",source:"me",paint:{"circle-color":meC,"circle-opacity":.1,"circle-radius":["interpolate",["exponential",2],["zoom"],0,["get","r0"],22,["*",["get","r0"],4194304]]}});
+  L({id:"me",type:"circle",source:"me",paint:{"circle-radius":7,"circle-color":meC,"circle-stroke-color":"#ffffff","circle-stroke-width":3}});
   L({id:"bus",type:"circle",source:"bus",paint:{"circle-radius":8,"circle-color":hot,"circle-stroke-color":P.bg,"circle-stroke-width":3}});
   L({id:"bus-plate",type:"symbol",source:"bus",layout:{"text-field":["get","plate"],"text-size":10,"text-anchor":"top","text-offset":[0,1.3],"text-font":["Noto Sans Regular"],"text-allow-overlap":true},
     paint:{"text-color":P.bg,"text-halo-color":ink,"text-halo-width":4}});
@@ -1005,10 +1012,10 @@ function fxFrame(t){
     c.strokeStyle=rgba(.35);c.lineWidth=1;c.stroke();
   }
   if(me&&(!FX.scanAt||age>SCAN*.6)){
-    more=true;const m=map.project(lnglat(me.pos)),k=((t-(FX.scanAt||0))%PULSE)/PULSE_LIFE;
+    more=true;const m=map.project(lnglat(me.pos)),k=((t-(FX.scanAt||0))%PULSE)/PULSE_LIFE,mr=css("--me-rgb"),mrgba=a=>"rgba("+mr+","+a.toFixed(3)+")";
     if(k<=1){const r=10+k*Math.min(W,H)*.42,a=.38*(1-k)*(1-k),n=Math.max(12,Math.floor(2*Math.PI*r/5));
-      c.strokeStyle=rgba(a*.25);c.lineWidth=6;c.beginPath();c.arc(m.x,m.y,r,0,7);c.stroke();
-      c.fillStyle=rgba(a);for(let i=0;i<n;i++){const th=i/n*Math.PI*2;c.fillRect(m.x+Math.cos(th)*r-1,m.y+Math.sin(th)*r-1,2,2)}}
+      c.strokeStyle=mrgba(a*.25);c.lineWidth=6;c.beginPath();c.arc(m.x,m.y,r,0,7);c.stroke();
+      c.fillStyle=mrgba(a);for(let i=0;i<n;i++){const th=i/n*Math.PI*2;c.fillRect(m.x+Math.cos(th)*r-1,m.y+Math.sin(th)*r-1,2,2)}}
   }
   if(more)FX.raf=requestAnimationFrame(fxFrame);
 }
@@ -1111,6 +1118,59 @@ function fit(key,pts,zoom){
   map.fitBounds(b,{padding:pad(),maxZoom:17,animate:false});
 }
 let lastRoutePts=0,lastBus=0;   /* 測試用：畫出的路線最多幾個點、幾台公車 */
+/* ---------- 公車位置推算 ----------
+   TDX 只給「車在哪一站、進站或已離站」（RealTimeNearStop）和下一站的到站秒數，每 60 秒更新一次。
+   兩次更新之間，依「下一站還要幾秒」把車沿著路線線形往前推，讓車持續移動；下一輪資料回來再校正。
+   - 已離站（A2EventType 0）：假設區間平均車速 6 m/s，用剩餘秒數推回目前已走的比例，之後等速走到下一站
+   - 進站中（A2EventType 1）：從這一站出發，剛好在預估秒數走到下一站
+   - 下一站沒有即時預估（未發車、末班已過）或預估超過 15 分鐘（多半不是這台車）：停在原站，不推算
+   不增加任何 API 呼叫。 */
+const BUS_V=6,BUS_MAX=900;
+let busPath=null,busTimer=0;
+function buildBusPath(stops,lines){
+  const line=(lines.slice().sort((a,b)=>b.length-a.length)[0]||[]);
+  if(line.length<2)return null;
+  const cum=[0];for(let i=1;i<line.length;i++)cum.push(cum[i-1]+dist(line[i-1],line[i]));
+  /* 每站對到線形上最近的頂點，往前找、不回頭，避免繞回去的路線對錯邊 */
+  let k=0;const at=stops.map(s=>{let best=k,bd=1e12;for(let j=k;j<line.length;j++){const d=dist(s.pos,line[j]);if(d<bd){bd=d;best=j}}k=best;return best});
+  return {line,cum,at};
+}
+function alongPath(P,i,f){   /* 第 i 站到第 i+1 站之間、比例 f 的位置 */
+  const a=P.at[i],b=P.at[i+1];
+  if(b==null||b<=a)return null;
+  const d=P.cum[a]+(P.cum[b]-P.cum[a])*f;
+  let j=a;while(j<b&&P.cum[j+1]<d)j++;
+  const seg=P.cum[j+1]-P.cum[j]||1,t=(d-P.cum[j])/seg,p=P.line[j],q=P.line[Math.min(j+1,P.line.length-1)];
+  return [p[0]+(q[0]-p[0])*t,p[1]+(q[1]-p[1])*t];
+}
+/* 回傳 0 到 1：從第 i 站往第 i+1 站走了多少；null 表示不推算 */
+function busProgress(kind,eta,elapsed,segLen){
+  if(eta==null||eta<0||eta>BUS_MAX)return null;
+  if(eta===0)return 1;
+  const f0=kind===0?Math.max(0,1-eta/Math.max(eta,segLen/BUS_V)):0;
+  return Math.min(1,f0+(1-f0)*Math.max(0,elapsed)/eta);
+}
+function busFeatures(now){
+  const cur=S.stops&&S.stops[S.dir];if(!cur)return [];
+  const pts=cur.Stops.filter(s=>s.pos),out=[],el=S.updated?(now-S.updated)/1000:0;
+  pts.forEach((s,i)=>{for(const b of S.near[S.dir+"|"+s.StopUID]||[]){
+    let p=s.pos,moving=false;
+    const nx=pts[i+1],e=nx&&S.eta[S.dir+"|"+nx.StopUID],live=e&&e.EstimateTime!=null&&(e.StopStatus==null||e.StopStatus===0);
+    if(busPath&&nx&&live){
+      const L=busPath.cum[busPath.at[i+1]]-busPath.cum[busPath.at[i]],f=busProgress(b.A2EventType===0?0:1,e.EstimateTime,el,L);
+      const q=f==null?null:alongPath(busPath,i,f);if(q){p=q;moving=f<1}
+    }
+    out.push(pt(p,{plate:b.PlateNumb,moving}));
+  }});
+  return out;
+}
+function tickBus(){
+  clearTimeout(busTimer);busTimer=0;
+  if(!map||!mapReady||S.view!=="route"||document.hidden)return;
+  const f=busFeatures(Date.now());setData("bus",f);lastBus=f.length;
+  if(f.some(x=>x.properties.moving))busTimer=setTimeout(tickBus,CALM.matches?5000:250);
+}
+document.addEventListener("visibilitychange",()=>{if(!document.hidden)tickBus()});
 function drawMap(){
   if(!map||!mapReady)return;
   drawMe();
@@ -1124,7 +1184,8 @@ function drawMap(){
     for(const l of lines)route.push({type:"Feature",properties:c?{c}:{},geometry:{type:"LineString",coordinates:l.map(lnglat)}});
     lastRoutePts=Math.max(0,...lines.map(l=>l.length));
     for(const s of pts){const sel=S.pick===s.StopUID;add(s.pos,sel?"sel":"stop",sel?zh(s.StopName):"",()=>pickStop(s.StopUID,"map"))}
-    for(const s of pts)for(const b of S.near[S.dir+"|"+s.StopUID]||[])bus.push(pt(s.pos,{plate:b.PlateNumb}));
+    const sp=cur.Stops.filter(s=>s.pos);busPath=buildBusPath(sp,lines);
+    bus.push(...busFeatures(Date.now()));
     const sel=pts.find(s=>s.StopUID===S.pick);
     fit("route|"+S.route.city+"|"+S.route.name+"|"+S.dir,sel?[sel.pos]:pts.map(s=>s.pos),16);
   }else if(v==="stop"){
@@ -1144,6 +1205,7 @@ function drawMap(){
     fit("home|"+Object.keys(at).length,Object.values(at).map(x=>x.p));
   }
   setData("route",route);setData("stops",stops);setData("bus",bus);lastBus=bus.length;
+  if(v==="route")tickBus();else clearTimeout(busTimer);
 }
 /* 列表與地圖同步選取：點列表移動地圖，點地圖上的站讓列表捲到該站 */
 function pickStop(uid,from){

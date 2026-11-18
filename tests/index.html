@@ -388,6 +388,30 @@ test("地圖動態：有點雲與動態圖層；定位後掃描一次並開始�
   eq(ev('map.getPaintProperty("bus","circle-color")'),getComputedStyle(win.document.documentElement).getPropertyValue("--map-hot").trim(),"公車是唯一的重點色");
 });
 
+test("公車位置推算：依下一站即時秒數沿路線前進；沒有即時預估時停在原站",async()=>{
+  /* 純函式：進站中從 0 出發、剛好在預估秒數到下一站；已離站先用平均車速推回已走比例；不合理的預估不推算 */
+  eq(ev("busProgress(1,120,0,600)"),0,"進站中、剛更新：還在這一站");
+  eq(ev("busProgress(1,120,60,600)"),.5,"走了一半時間");
+  eq(ev("busProgress(1,120,500,600)"),1,"超過預估秒數：停在下一站，不衝過頭");
+  eq(ev("busProgress(0,60,0,720)"),.5,"已離站：720 公尺以 6 m/s 要 120 秒，剩 60 秒＝已走一半");
+  eq(ev("busProgress(0,60,30,720)"),.75,"之後等速走完剩下的");
+  eq(ev("busProgress(1,1200,0,600)"),null,"超過 15 分鐘多半不是這台車，不推算");
+  eq(ev("busProgress(1,null,0,600)"),null,"沒有預估不推算");
+  await boot({storage:CRED});
+  await openRoute("262",0);
+  await until(()=>ev("mapReady"),8000,"地圖樣式載入");
+  /* 模擬資料：AAA-001 在第 2 站，下一站是表定；BBB-002 在第 4 站，下一站末班已過 → 兩台都不推算 */
+  /* 看 5 分鐘後：表定或末班已過的下一站，車都不該被推離原站 */
+  const at=()=>ev("busFeatures(Date.now()+300000).map(f=>f.geometry.coordinates.map(x=>+x.toFixed(6)).join(','))");
+  const stopAt=i=>ev("lnglat(S.stops[0].Stops["+i+"].pos).map(x=>+x.toFixed(6)).join(',')");
+  eq(at(),[stopAt(1),stopAt(3)],"沒有即時預估時停在原站");
+  ev('S.eta["0|S2"]={StopStatus:0,EstimateTime:120}');
+  const later=ev("busFeatures(Date.now()+60000)[0].geometry.coordinates");
+  const a=ev("lnglat(S.stops[0].Stops[1].pos)"),b=ev("lnglat(S.stops[0].Stops[2].pos)");
+  ok(later[0]>Math.min(a[0],b[0])-1e-9&&later[0]<Math.max(a[0],b[0])+1e-9&&String(later)!==String(a),"有即時預估後，60 秒時在第 2、3 站之間："+later);
+  eq(ev('map.getPaintProperty("me","circle-color")'),getComputedStyle(win.document.documentElement).getPropertyValue("--me").trim(),"定位點用 --me，和站牌、公車分開");
+});
+
 test("定位被拒：顯示權限說明",async()=>{
   await boot({storage:CRED,geo:"deny"});
   click("#locate");
@@ -408,7 +432,7 @@ test("附近的站牌：只列 400 公尺內，由近到遠並顯示距離",asyn
 test("「進站中」在目前深淺模式下文字對比 ≥ 4.5:1",async()=>{
   await boot({storage:CRED});
   await openRoute("262",0);
-  const e=$f(".eta.now"),cs=getComputedStyle(e);
+  const e=$f(".eta.now .n"),cs=getComputedStyle(e);   /* 紅底在數字膠囊上 */
   const c=contrast(cs.color,cs.backgroundColor);
   ok(c>=4.5,"對比只有 "+c.toFixed(2));
   eq(cs.opacity,"1","閃爍不應改變透明度");
