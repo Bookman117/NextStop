@@ -103,6 +103,8 @@ const TYPE=[["countdown","trip .n","6<small>分</small>",'font:500 52px/.8 var(-
       'eta:{"0|D0":{StopStatus:0,EstimateTime:900},"0|D1":{StopStatus:0,EstimateTime:150},"0|D2":{StopStatus:0,EstimateTime:30},"0|D3":{StopStatus:0,EstimateTime:400},"0|D4":{StopStatus:1,EstimateTime:720,IsLastBus:true}},'+
       'near:{"0|D2":[{PlateNumb:"EAL-0158",A2EventType:1}],"0|D0":[{PlateNumb:"EAL-0372",A2EventType:0}]}})');
     const routeList=E("vRoute()").replace(/<div class="seg"[\s\S]*?<\/div>/,"");
+    /* 開始使用卡：需要「有金鑰但沒有常用」才會出現（沒金鑰時是示範資料） */
+    E('cred={id:"x",secret:"y"};favs=[];S.view="home";S.updated=new Date()');const startCard=E("vHome()");E("cred=null");
     const sk=document.createElement("div");sk.innerHTML=E('skeleton("載入路線中")');[...sk.querySelectorAll(".row")].slice(3).forEach(r=>r.remove());const skel=sk.innerHTML;
     for(const col of [document.getElementById("light"),document.getElementById("dark")]){
       const cs=getComputedStyle(col),v=k=>cs.getPropertyValue(k).trim();
@@ -110,6 +112,7 @@ const TYPE=[["countdown","trip .n","6<small>分</small>",'font:500 52px/.8 var(-
       h+='<div class="sg-sec">字體</div><div class="sg-type">'+TYPE.map(([n,sel,txt,st])=>'<div><code>'+n+'</code><span style="'+st+'">'+txt+"</span></div>").join("")+"</div>";
       h+='<div class="sg-sec">行程卡</div><p class="sg-note">燈條一格＝一分鐘；只有最急的一班用重點色。</p>'+cards.map(([t,c])=>'<div class="sg-note">'+t+"</div>"+c).join("");
       h+='<div class="sg-sec">列表到站牌</div><div class="sg-eta">'+etas.map(([t,b])=>"<figure>"+b+"<figcaption>"+t+"</figcaption></figure>").join("")+"</div>";
+      h+='<div class="sg-sec">開始使用（沒有常用時）</div>'+startCard;
       h+='<div class="sg-sec">路線列表與路線條</div><p class="sg-note">選取的站有左側重點色條；車用墨色點，進站中在圓點上、已離站在兩站之間。</p>'+routeList;
       h+='<div class="sg-sec">載入骨架</div>'+skel;
       h+='<div class="sg-sec">控制元件</div><div class="seg"><button aria-pressed="true">往 撫遠街</button><button aria-pressed="false">往 板橋</button></div>'+
@@ -117,6 +120,7 @@ const TYPE=[["countdown","trip .n","6<small>分</small>",'font:500 52px/.8 var(-
         '<button type="button" class="btn ghost near-btn">◎ 附近的站牌</button>'+
         '<div class="chips"><button class="chip">307</button><button class="chip">捷運西門</button><button class="chip ghost">清除</button></div>'+
         '<div class="sg-row"><span class="tag">EAL-0158 進站中</span><span class="tag left">EAL-0372 已離站</span><span class="tag last">末班車</span></div>'+
+        '<div style="position:relative;height:64px"><div id="toast" class="on" style="position:absolute;bottom:8px"><span>已加入常用 307 捷運西門站</span><button type="button">復原</button></div></div>'+
         '<div class="demo">目前顯示的是示範資料，不是真實到站時間。</div><div class="err">連不上 TDX，下一輪會自動重試。</div>';
       h+='<div class="sg-sec">地圖圖例</div><div class="sg-map"><span class="bld" style="left:8%;top:12%;width:22%;height:30%"></span><span class="bld" style="left:58%;top:55%;width:28%;height:32%"></span>'+
         '<svg viewBox="0 0 400 150" preserveAspectRatio="xMidYMid slice"><path d="M10 120 C 90 100,140 60,220 70 S 330 40,390 30" fill="none" stroke="var(--bg)" stroke-width="10" stroke-linecap="round"/>'+

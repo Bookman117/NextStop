@@ -497,6 +497,28 @@ test("設計資產不漂移：DESIGN.md 的色彩 token 與看板 CSS 一致；s
   sg.remove();
 });
 
+test("回饋與入口：收藏有提示可復原；沒有常用時給入口；狀態列可手動更新但有冷卻",async()=>{
+  /* 第一次使用：常用頁有開始說明與兩個入口 */
+  await boot({storage:CRED});
+  ok($f("#main .start")&&$f('#main .start [data-act="tab"][data-v="search"]'),"沒有常用時有「搜尋」入口");
+  /* 收藏：提示＋復原 */
+  await openRoute("262",0);
+  const star=()=>$f('[data-act="pick"][data-uid="S1"] .star');
+  click(star());
+  eq(JSON.parse(win.__mem.bus_favs).length,1,"已收藏");
+  ok($f("#toast.on")&&/已加入常用 262 臺北車站/.test($f("#toast").textContent),"出現提示："+($f("#toast")||{}).textContent);
+  eq($f("#toast").getAttribute("role"),"status","提示會被螢幕閱讀器念出");
+  click('#toast [data-act="toastundo"]');
+  eq(JSON.parse(win.__mem.bus_favs).length,0,"復原後取消收藏");
+  ok(!$f("#toast").classList.contains("on"),"復原後提示收起");
+  /* 手動更新：剛更新完不能按，過 15 秒後可以按，按了會送出新的請求 */
+  ok($f("#next").disabled,"剛更新完不能手動更新");
+  ev("S.left=REFRESH-20;render()");
+  ok(!$f("#next").disabled,"過 15 秒後可以手動更新");
+  const n=calls().length;click("#next");
+  await until(()=>calls().length>n,4000,"手動更新送出請求");
+});
+
 test("定位被拒：顯示權限說明",async()=>{
   await boot({storage:CRED,geo:"deny"});
   click("#locate");

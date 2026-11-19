@@ -195,6 +195,20 @@ components:
   list-divider-dark:
     backgroundColor: "{colors.line-dark}"
     height: 1px
+  toast:
+    backgroundColor: "{colors.hot-bg}"
+    textColor: "{colors.hot-ink}"
+    rounded: "{rounded.list}"
+  toast-action:
+    backgroundColor: "{colors.hot-bg}"
+    textColor: "{colors.hot}"
+  toast-dark:
+    backgroundColor: "{colors.hot-bg-dark}"
+    textColor: "{colors.hot-ink-dark}"
+    rounded: "{rounded.list}"
+  toast-action-dark:
+    backgroundColor: "{colors.hot-bg-dark}"
+    textColor: "{colors.hot-dark}"
   button-primary:
     backgroundColor: "{colors.ink}"
     textColor: "{colors.surface}"
@@ -272,6 +286,9 @@ NextStop 是給一個人通勤用的雙北公車看板。設計只回答一個�
 - **到站牌（列表）：** 數字（countdown-list）加小字「分」，右上小訊號圖示代表即時預估，下方 10 格迷你燈條。即將到站用 `soon`；表定是灰字虛線燈條；進站中是 `eta-now` 膠囊；無資料、未發車用 `muted` 小字。
 - **路線條：** 每列左側一段直線串起整條路線，站是空心小圈，選取的站實心。公車點用 `ink`（不用紅色，避免和紅色路線混在一起），依推算進度在兩站之間連續移動。
 - **站牌看板：** 有倒數的前 3 班用行程卡，其餘路線用精簡列表。
+- **提示條（toast）：** 收藏、取消收藏後在分頁列上方出現 5 秒，用反色（和重點卡同一組 `hot-bg`／`hot-ink`），右側「復原」用 `hot`。一次只有一條；`role=status` 讓螢幕閱讀器念出。☆ 很容易誤觸，所以每次都要能復原。
+- **開始使用卡：** 沒有常用項目時，常用頁用一張卡說明三個步驟，並直接給「搜尋」與「附近的站牌」兩個入口，不只寫一行字。
+- **手動更新：** 狀態列的「下次 N 秒」可以點，立刻更新；上次更新後 15 秒內停用（虛線底線消失），避免連按把 TDX 配額用完。
 - **地圖：** 由下而上是底色、水域與公園淡色塊、建築點陣（點雲）、小路圓點虛線、主要道路細實線、文字、路線（底色描邊 10px 加 5px 實線）、站牌、我的位置、公車、動態層。定位後一條流動曲線掃過一次，之後從我的位置每 6 秒擴散一圈淡波紋。
 
 ## Do's and Don'ts
