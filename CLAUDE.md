@@ -11,10 +11,11 @@
 - `index.html`：整個看板，單一檔案（HTML、CSS、JS 都在裡面），沒有建置步驟。原檔名是 `bus-board.html`。
 - `manifest.webmanifest`、`icon.svg`、`icons/icon-{180,192,512}.png`：PWA 名稱與圖示。PNG 由 `icon.svg` 用 `sips -s format png -z N N icon.svg --out icons/icon-N.png` 產生，改圖示時三個尺寸要一起重產
 - `sw.js`：service worker（2026-11-18 加入，2026-11-19 改為 v3）。導覽請求 network-first，並帶 `cache:"no-cache"` 向伺服器確認（GitHub Pages 回 `max-age=600`，不加會吃到瀏覽器 10 分鐘內的舊頁面；2026-11-19 使用者看到舊版狀態列才發現），失敗時回快取的 `./`；同源 png/svg/webmanifest 與 MapLibre（unpkg 指定版本）cache-first；`tiles.openfreemap.org`（樣式、向量圖磚、字型、圖示）stale-while-revalidate、上限 300 筆；TDX 與 Google Fonts 不攔截。改快取清單或策略時把 `VERSION` 加一，啟用時會刪掉舊版快取（含舊的點陣圖磚）
-- `tests/headless.sh`：用無頭 Vivaldi（或 `BROWSER` 指定的 Chromium 系瀏覽器）跑 `tests/index.html`，讀分頁標題拿結果；`sh tests/headless.sh`、`sh tests/headless.sh dark`，`QUERY` 可加 `grep=`、`app=` 做突變測試。Claude 預覽視窗被隱藏時背景分頁會暫停繪製，MapLibre 樣式載不完、地圖測試會逾時，這時改用這支腳本
-- `tests/index.html`：瀏覽器自動化測試，32 項，約 15 秒。改完 `index.html` 後用本機伺服器開 `tests/` 跑一次（`python3 -m http.server` 後開 `/tests/`）。`?grep=` 篩選、`?app=` 指定別的看板檔（相對於 tests/，做突變測試用）。測試環境注入在看板 `<head>` 最前面：記憶體版 localStorage（不碰真實資料，最後一項會比對前後）、模擬 TDX（`ENV()` 內的 ROUTES／站序／ETA）、假定位、固定時段。不要在測試裡呼叫真正的 `history.back()`：瀏覽器把外層與所有 iframe（包括已移除的）的紀錄串在一起，退過頭會把測試頁本身導走；改用 `__pushes` 檢查 pushState，並用 popstate 事件模擬上一頁。也不要用 `history.length` 判斷（上限 50）
+- `tests/headless.sh`：用無頭 Vivaldi（或 `BROWSER` 指定的 Chromium 系瀏覽器）跑 `tests/index.html`，讀分頁標題拿結果。無頭瀏覽器預設跟隨系統深淺色，所以淺色要明確加 `--blink-settings=preferredColorScheme=1`（腳本已處理；2026-11-19 之前幾輪的「淺色」其實跑成深色）；`sh tests/headless.sh`、`sh tests/headless.sh dark`，`QUERY` 可加 `grep=`、`app=` 做突變測試。Claude 預覽視窗被隱藏時背景分頁會暫停繪製，MapLibre 樣式載不完、地圖測試會逾時，這時改用這支腳本
+- `tests/index.html`：瀏覽器自動化測試，33 項，約 15 秒。分頁標題會寫出結果與深淺色（例如「通過 33/33 NextStop 測試（淺色）」）。改完 `index.html` 後用本機伺服器開 `tests/` 跑一次（`python3 -m http.server` 後開 `/tests/`）。`?grep=` 篩選、`?app=` 指定別的看板檔（相對於 tests/，做突變測試用）。測試環境注入在看板 `<head>` 最前面：記憶體版 localStorage（不碰真實資料，最後一項會比對前後）、模擬 TDX（`ENV()` 內的 ROUTES／站序／ETA）、假定位、固定時段。不要在測試裡呼叫真正的 `history.back()`：瀏覽器把外層與所有 iframe（包括已移除的）的紀錄串在一起，退過頭會把測試頁本身導走；改用 `__pushes` 檢查 pushState，並用 popstate 事件模擬上一頁。也不要用 `history.length` 判斷（上限 50）
 - `tests/sw.test.mjs`：`node tests/sw.test.mjs`，在 Node 模擬 caches／fetch 測 sw.js 的 10 項策略；可傳入別的 sw 檔路徑做突變測試。改 sw.js 的快取清單時要同步更新預期數字
 - 新增功能時，在 `tests/index.html` 補對應測試；修 bug 時先補一個會失敗的測試
+- `DESIGN.md`：設計系統（token、原則、元件、否決過的方向）。`styleguide.html`：樣式頁，執行時讀 `index.html` 的 CSS（深色區塊改寫成 `.dark` 前綴，用文字處理，不經過 CSSOM，因為含 `var()` 的 `font` 簡寫讀回來會被丟掉），並在隔離的 iframe（記憶體 localStorage、fetch 一律回空、不載地圖）裡呼叫看板的繪製函式產生元件
 - `README.md`：給使用者與訪客看的說明（功能、取得金鑰、隱私、技術說明）。功能或端點有變動時要一起更新。
 - `drafts/`：設計草案與 designforge 紀錄（`2026-11-17--nextstop-map.md`），已在 `.gitignore`，不進 repo。
 
@@ -49,26 +50,14 @@
 - 網址路由：`#home`、`#search`、`#settings`、`#route/{City}/{路線}/{方向}`、`#stop/{站名}`。`go()` 換頁時 pushState，`depth` 記錄在看板內前進幾頁；畫面上的返回鍵在 depth>0 時用 history.back()，否則回 `S.prev`。切換方向用 replaceState。無效網址落回首頁並改正網址
 - 面板內 `main` 是 flex 直排，`#app main>*{flex-shrink:0}` 不能拿掉，否則列表會被壓扁且捲不動（2026-11-17 曾發生）
 - 定位：地圖右上 ◎（`locate()`）只在本機用位置；路線頁會選取目前方向最近的站。搜尋頁「附近的站牌」（`findNearby()`）用 OData `$filter` 圈 StopPosition 經緯度方框（約 ±400 公尺），再在本機算距離過濾，台北、新北各 1 次呼叫。沒用 `$spatialFilter`：v3 Bus Swagger 沒列這個參數，無金鑰也無法驗證
-- 視覺（2026-11-18 定案「P 行程線」）：經過換膚（B＋C）、結構草案（X 出發看板＋Y 時間雷達，使用者說「感覺沒有到位」）與跨領域研究（`drafts/2026-11-18--visual-research.md`：Teenage Engineering、Nothing Glyph、Flighty、F1 圖卡、Braun ET66）後，使用者選 P。X 的跑馬燈、時間比例列高與 Y 的雷達都已移除，不要加回
-  - 原則：單色＋唯一重點色 `--hot`，只給「最急的那一班」（常用頁最快到且有即時倒數的那張卡、路線頁選取的站），該卡反色（淺色模式黑底、深色模式淺底）。其他地方不用彩色重點；預設路線線與路線條用 `--route`（灰），路線家族色照舊
-  - 行程卡 `tripCard()`：路線（家族色）＋往哪＋站名、大字倒數（Geist Mono）、`cells()` 10 格燈條（1 格＝1 分鐘，向上取整，超過 10 分鐘全亮，沒有倒數不亮）、`tripSay()` 一句話（只依分鐘分級：進站中／≤3 快到了／≤8 還有一點時間／其餘還早；表定與營運狀態另有說法；沒有步行時間資料，不寫「何時出門」）
-  - 常用頁的卡同時是 `.row`（測試以 `#main .row` 計數）；路線頁的卡是 `.pickline.trip`，放在標題列，抽屜 peek 時也看得到
-  - 進站中仍是紅底閃爍（`.trip .n.now`，外圈光暈，不改 opacity）
-  - 地圖視覺：由下而上是底色 → 水域、公園淡色塊 → 建築（`fill-pattern` 點陣圖樣＝點雲，`dotsImage()`）→ 小路圓點虛線、主要道路細實線、鐵路 → 文字 → 路線（底色描邊 10px＋5px 實線，家族色或 `--route`）→ 站牌（一般站底色空心小圈、常用實心、選取實心加外圈，常用與選取附名稱）→ 我的位置（藍色 `--me`，見下）→ 公車（`--map-hot`，畫面上唯一的重點色，車牌白字黑底）→ `#fx` canvas。2026-11-18 的 Leaflet 版用圖磚取樣做點雲（drafts/map-fx/），向量版改由建築點陣承擔，不再取樣
-  - 地圖動態 `FX`：定位成功後 `FX.scan()` 掃一次（流動曲線前緣＝三個正弦相加，後方 90px 淡點雲，約 2.2 秒）；之後只要有 `me`，從我的位置每 6 秒擴散一圈淡點狀波紋。點陣格線用固定地點的螢幕座標對 7 取餘數對齊地圖。動畫只在需要時跑 requestAnimationFrame，頁面在背景或「減少動態」時不跑。使用者要求：點雲常駐但不能遮蓋地圖、掃描線是曲線不是直線也不是橢圓、波紋要隱約不搶戲
-  - 我的位置（2026-11-19 使用者要求和站牌區隔）：藍色 `--me`（淺 #1f6fe5、深 #5b9dff）加白框與精度圈，定位波紋也用同一色；這是重點色以外唯一的彩色，只代表「我」
-  - 公車位置推算（2026-11-19 使用者問「能否按速率推算持續移動」）：`busFeatures()` 依下一站的即時秒數沿 `buildBusPath()` 的路線線形推車，`busProgress()` 規則：進站中從本站出發、剛好在預估秒數到下一站；已離站以平均 6 m/s（`BUS_V`）推回已走比例再等速走完；下一站不是即時預估（表定、末班已過）或超過 15 分鐘（`BUS_MAX`）不推算、停在原站；到下一站後停住不衝過頭。`tickBus()` 每 250ms 更新公車圖層（減少動態時 5 秒），只在路線頁、頁面在前景、有車在動時跑；每輪 60 秒資料回來重新校正。不增加 API 呼叫。列表路線條也跟著動（2026-11-19）：每台車一個 `.bus.mv`（`data-uid`、`data-plate`）放在出發站那一列，`placeStripBuses()` 依 f 設定 top，從本站圓點走到下一站圓點（距離＝本列半高＋下一列半高）；沒有推算時維持原本 `.at`／`.gone` 的位置。`render()` 之後會呼叫 `tickBus()` 把車放回推算位置
-  - 列表到站牌（2026-11-19 使用者要求改排版）：`etaBox()` 改成大數字＋小單位、右上小訊號圖示（即時）、下方 10 格迷你燈條（`miniCells()`，和行程卡同義）；即將到站改琥珀色字與燈條、單位仍寫「分」（「即將到站」留在 aria-label）；表定灰字虛線燈條；進站中是紅底小膠囊並閃爍外圈光暈
-  - 介面細節（2026-11-19）：常用頁標題依分組說人話（上班組「出門的車」、回家組「回家的車」、不分組「常用」），副標是星期與時間；狀態列左邊「更新 hh:mm:ss」、右邊「下次 N 秒」倒數（`#next`，每秒更新）；搜尋頁沒有結果時列出最近搜尋（`recent_q`，最多 6 筆，只存在這台裝置，可清除）；路線與站牌載入中顯示和列表同形的骨架（`skeleton()`，`role=status`，減少動態時不閃）；設定頁 `.field input` 設 `flex:none`（直排 flex 裡 `flex:1` 會把輸入框壓扁，2026-11-19 修正）
-  - 站牌看板（2026-11-19 使用者要求改成行程卡風格）：`vStop()` 把有倒數的前 `BOARD_CARDS`（3）班做成行程卡，第一張（非表定）用重點色，其餘路線用精簡列表（`etaBox()` 列），避免二三十條路線全是大卡片。卡與列都帶 `data-uid`，點了進路線並選取這一站
-  - 地圖出處：精簡模式在使用者按 ⓘ 之前一律收起（MapLibre 在 `sourcedata` 時會自動展開，`foldAttr()` 每次收回）
-  - 等待資料（2026-11-19 使用者真實截圖：排隊等 TDX 配額時每站顯示「無資料」、選取站卡用紅色大字寫「無資料」）：`waiting(e)`＝這一頁的即時資料還沒回來（`live()` 且 `!S.updated`）。`etaBox()` 顯示骨架、`tripCard()` 顯示等待卡（`.trip.pend`，排隊時寫「排隊等 TDX 配額」）；`go()` 換到別的畫面時把 `S.updated` 清掉。資料回來後仍沒有的站才寫「無資料」。路線頁選取站的卡只有在有倒數（非表定）時才用重點色；重點色卡上的文字狀態（無資料、未發車）用一般字色
-  - 面板捲軸：細、圓角、軌道透明（`scrollbar-width:thin` 加 WebKit 樣式），顏色跟深淺色
-  - 中文字體：jf 粉圓體（Google Fonts `Huninn`，OFL，2026-11-18 使用者指定）。只有 400 一種字重，`body` 設 `font-synthesis-weight:none` 避免假粗體，層級靠字級與顏色；英數用 Geist／Geist Mono，Noto Sans TC 只當缺字備援
-  - 草案：`drafts/skins/`（換膚）、`drafts/leap/`（X、Y）、`drafts/r2/`（P、Q）
+- 視覺與設計系統：**規則、token、元件與否決過的方向都在 `DESIGN.md`**（Google DESIGN.md 格式），樣式頁 `styleguide.html` 用看板本身的 CSS 與繪製函式並排呈現淺深兩色的所有元件。改設計時三者一起改：`index.html` 的 CSS 變數、`DESIGN.md` 的 token 與說明、需要時在 `styleguide.html` 補新元件；測試「設計資產不漂移」會比對 `DESIGN.md` 的色彩與 CSS、並確認樣式頁能產生。DESIGN.md 名稱對應 CSS 變數：`hot-muted`→`--hot-mu`，其餘同名；深色版加 `-dark`
+  - 定案經過（2026-11-18 到 19）：換膚（B＋C）→ 結構草案 X 出發看板＋Y 時間雷達（使用者：「感覺沒有到位」）→ 跨領域研究（`drafts/2026-11-18--visual-research.md`）→ 使用者選「P 行程線」。草案在 `drafts/skins/`、`drafts/leap/`、`drafts/r2/`、`drafts/map-fx/`
+  - 實作對照：行程卡 `tripCard()`＋`cells()`＋`tripSay()`；列表到站牌 `etaBox()`＋`miniCells()`；等待狀態 `waiting(e)`（`live()` 且 `!S.updated`，`go()` 換畫面會清掉 `S.updated`）；載入骨架 `skeleton()`；常用頁的卡同時是 `.row`（測試以 `#main .row` 計數）；路線頁選取站的卡是 `.pickline.trip`；站牌看板 `vStop()`（前 `BOARD_CARDS` 班做成卡）；最近搜尋 `recent_q`；地圖樣式 `mapStyle()`、`mapPal()`、`dotsImage()`、`addOverlays()`；地圖動態 `FX`（`FX.scan()` 定位後掃描一次、`fxFrame()` 波紋）；地圖出處 `foldAttr()`
+  - 公車位置推算（不是設計規則，是資料推算）：`busStates()` 依下一站的即時秒數沿 `buildBusPath()` 的線形推車，`busProgress()`：進站中從本站出發、剛好在預估秒數到下一站；已離站以平均 6 m/s（`BUS_V`）推回已走比例再等速走完；下一站不是即時預估（表定、末班已過）或超過 15 分鐘（`BUS_MAX`）不推算；到站後停住。`tickBus()` 每 250ms 更新地圖與路線條（`placeStripBuses()`，減少動態時 5 秒），只在路線頁、前景、有車在動時跑；`render()` 後會呼叫。不增加 API 呼叫
+  - 設定頁 `.field input` 要 `flex:none`（直排 flex 裡 `flex:1` 會把輸入框壓扁）；`body` 的 `font-synthesis-weight:none` 不能拿掉（粉圓體只有一種字重）
 - 常用分組（2026-11-18，參考 Bus+、Citymapper、Transit）：收藏可帶 `group: "work"|"home"`。`autoTab()` 依時段預設分頁（<12 點 work、≥16 點 home，該組沒有項目就 all）；手動切換存在 `S.homeTab`（只在這次開啟有效）。編輯模式（`S.editFav`）設定分組與移除收藏。常用頁地圖只畫目前分頁的項目
 - 即時與表定（參考 Transit、OneBusAway）：StopStatus 0 的 EstimateTime 是即時預估，加訊號圖示；StopStatus 1 且有 EstimateTime 是表定推算，`.eta.sched` 虛線框、字樣「表定」。到站牌有 aria-label 說明是哪一種
-- 路線條（參考 Bus+）：路線列表每列有 `.strip`（直線＋站點）。RealTimeNearStop 的 A2EventType≠0（進站中）畫在該站點上（`.bus.at`），=0（已離站）畫在該列下緣、即與下一站之間（`.bus.gone`，最後一站不畫）。公車點用 `--ink`，不用紅色，避免和紅色路線混在一起；地圖公車點同樣改用 `--ink`
+- 路線條（參考 Bus+）：路線列表每列有 `.strip`（直線＋站點）。沒有推算時，RealTimeNearStop 的 A2EventType≠0（進站中）畫在該站點上（`.bus.at`），=0（已離站）畫在該列下緣（`.bus.gone`，最後一站不畫）；有推算時依進度移動（見上）。路線條上的公車點用 `--ink`，不用紅色，避免和紅色路線混在一起；地圖上的公車則用 `--map-hot`
 - 路線家族配色（參考 Transit）：`FAM` 依名稱前綴（紅、藍、棕、綠、橘、小）給淺色／深色兩組顏色，文字對比在淺色 #fff／#eef1f4 與深色 #17232b／#0e171d 上都 ≥ 4.5:1（最低橘色 4.56）。套用在路線號碼、路線頁標題、路線條（`--rc`）與地圖路線線；切換深淺色時重新 render
 - 方向記憶（參考 Transit）：切換方向時寫入 `route_dir`（`{City}|{路線}` → 方向）。從搜尋結果進路線時沿用；從收藏、站牌看板或網址進來時用它們自己的方向
 - 觸控裝置（pointer:coarse）地圖按鈕 44px；把手視覺 22px、觸控範圍用 ::after 往上延伸到 44px
@@ -84,6 +73,7 @@
 - 用 jsdom 模擬測過所有畫面、按鈕、收藏、搜尋，以及模擬的 429 情境
 - 2026-11-17 使用者實測：第一次查路線要等 60 秒配額。原因是搜尋每次花 4 次（路線＋站牌 × 2 城市），再開路線 3 次就超過。改成本機路線清單後，模擬測試：首次使用搜尋 2 次、開路線 3 次，資料 1.6 秒顯示；之後搜尋 0 次、開路線 2 到 3 次
 - 2026-11-17 UI/UX 審視後修正：列表壓扁（手機 8 站只顯示 151/525px、桌面 60 站只顯示 545/3905px）、深色「進站中」對比 2.3:1、換頁不寫瀏覽紀錄。修正後實測：列表完整高度、滑鼠滾輪可捲、深色「進站中」8.0:1、動畫中 opacity 固定 1、返回鍵與 history.back 正確回上一頁、深層連結可直接開啟、無效網址改正為 #home
+- 2026-11-19 DESIGN.md 與 styleguide.html：自寫檢查（YAML 解析、token 引用、元件對比、章節順序）通過，所有元件的文字對比 ≥ 4.5:1（最低 `map-me` 4.70、`trip-card-hot-countdown-dark` 5.13）；官方 `npx @google/design.md lint` 因自動權限擋下 npm 下載沒有跑。33 項在無頭 Vivaldi 確實的淺色與深色都通過；突變（只改 CSS 色彩、不改 DESIGN.md）被抓到
 - 2026-11-19 等待狀態、細捲軸、service worker 頁面不吃快取：32 項在無頭 Vivaldi 深淺色都通過；`tests/sw.test.mjs` 10 項通過。突變（拿掉等待判斷、頁面請求不帶 no-cache）都被抓到
 - 2026-11-19 站牌看板行程卡：31 項在無頭 Vivaldi 深淺色都通過；突變（每張卡都用重點色）被抓到
 - 2026-11-19 介面細節（情境標題、下次更新倒數、最近搜尋、載入骨架、設定輸入框）：30 項在無頭 Vivaldi 深淺色都通過（`tests/headless.sh`）；突變 2 處（拿掉輸入框 flex:none、不記最近搜尋）都被抓到

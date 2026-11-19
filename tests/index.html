@@ -475,6 +475,28 @@ test("等待資料：TDX 配額排隊時顯示等待中，不顯示「無資料�
   ok(!$f(".pickline.trip").classList.contains("hot"),"無資料的選取站不用重點色");
 });
 
+test("設計資產不漂移：DESIGN.md 的色彩 token 與看板 CSS 一致；styleguide.html 能用看板的 CSS 與函式產生",async()=>{
+  const md=await (await fetch("../DESIGN.md",{cache:"no-store"})).text();
+  const fm=md.split("---")[1],col=fm.split(/\ncolors:\n/)[1].split(/\n\S/)[0];
+  const tok={};for(const m of col.matchAll(/^\s+([\w-]+):\s*"(#[0-9a-fA-F]{6})"/gm))tok[m[1]]=m[2].toLowerCase();
+  await boot({storage:CRED});
+  const dark=win.matchMedia("(prefers-color-scheme:dark)").matches,cs=getComputedStyle(win.document.documentElement);
+  /* DESIGN.md 的名稱對應 CSS 變數；深色模式比對 -dark 版本 */
+  const MAP={bg:"--bg",surface:"--surface",ink:"--ink",muted:"--muted",line:"--line",route:"--route",cell:"--cell",hot:"--hot","hot-bg":"--hot-bg","hot-ink":"--hot-ink",
+    "hot-muted":"--hot-mu","hot-cell":"--hot-cell",now:"--now","now-ink":"--now-ink",soon:"--soon","map-hot":"--map-hot",me:"--me"};
+  const diff=[];
+  for(const [k,v] of Object.entries(MAP)){const want=tok[dark?k+"-dark":k]||(dark?null:tok[k]);if(!want)continue;
+    const got=cs.getPropertyValue(v).trim().toLowerCase();if(got!==want)diff.push(k+" DESIGN.md="+want+" CSS="+got)}
+  eq(diff,[],"DESIGN.md 與 index.html 的色彩一致（"+(dark?"深色":"淺色")+"）");
+  ok(Object.keys(tok).length>=30,"DESIGN.md 解析到色彩 token："+Object.keys(tok).length);
+  const sg=document.createElement("iframe");sg.width=900;sg.height=600;sg.src="../styleguide.html";document.getElementById("stage").appendChild(sg);
+  await until(()=>sg.contentDocument&&/已產生/.test(sg.contentDocument.title),10000,"樣式頁產生");
+  eq(sg.contentDocument.getElementById("sg-err").textContent,"","樣式頁沒有錯誤");
+  ok(sg.contentDocument.querySelectorAll("#light .trip").length>=6&&sg.contentDocument.querySelectorAll("#dark .trip").length>=6,"淺深兩欄都有行程卡");
+  ok(parseFloat(getComputedStyle(sg.contentDocument.querySelector("#light .trip .n")).fontSize)>=40,"行程卡大字倒數沒被樣式頁弄丟");
+  sg.remove();
+});
+
 test("定位被拒：顯示權限說明",async()=>{
   await boot({storage:CRED,geo:"deny"});
   click("#locate");
@@ -546,7 +568,7 @@ test("地圖程式庫載入失敗：退回單欄列表，功能照常",async()=>
   const pass=results.filter(r=>r.ok).length;
   document.getElementById("sum").textContent=(pass===results.length?"全部通過：":"有失敗：")+pass+" / "+results.length;
   const out=document.getElementById("result");out.textContent=JSON.stringify({pass,total:results.length,results});
-  document.title=(pass===results.length?"通過 ":"失敗 ")+pass+"/"+results.length+" NextStop 測試";
+  document.title=(pass===results.length?"通過 ":"失敗 ")+pass+"/"+results.length+" NextStop 測試（"+(matchMedia("(prefers-color-scheme:dark)").matches?"深色":"淺色")+"）";
 })();
 </script>
 </body>
