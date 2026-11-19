@@ -21,8 +21,8 @@ const fetchEv=async(url,mode="no-cors")=>{let resp=null;const pend=[];const e={r
 let failed=0;
 const ok=(n,c)=>{if(!c)failed++;console.log((c?"通過 ":"失敗 ")+n)};
 await run("install");await run("activate");
-const shell=await caches.open("nextstop-shell-v3");
-ok("安裝時預存頁面、圖示與 MapLibre（8 個檔）",(await shell.keys()).length===8);
+const shell=await caches.open("nextstop-shell-v4");
+ok("安裝時預存頁面、圖示與 MapLibre（9 個檔）",(await shell.keys()).length===9);
 let r=await fetchEv(ORIGIN+"/NextStop/#route","navigate");ok("有網路時頁面走網路",r&&(await r.text()).startsWith("body:"));
 ok("抓頁面時向伺服器確認更新（cache: no-cache），不吃瀏覽器 10 分鐘的快取",opts[opts.length-1].cache==="no-cache");
 online=false;r=await fetchEv(ORIGIN+"/NextStop/index.html","navigate");ok("離線時頁面改用快取",r&&(await r.text()).includes("/NextStop/"));
@@ -31,9 +31,9 @@ ok("TDX API 不經過快取",(await fetchEv("https://tdx.transportdata.tw/api/ba
 ok("Google Fonts 不經過快取",(await fetchEv("https://fonts.googleapis.com/css2?family=x"))===null);
 log.length=0;r=await fetchEv("https://unpkg.com/maplibre-gl@5.24.1/dist/maplibre-gl.js","cors");ok("MapLibre 直接用快取、不重抓",r&&log.length===0);
 for(let i=0;i<305;i++)await fetchEv("https://tiles.openfreemap.org/planet/x/15/1/"+i+".pbf","cors");
-const tiles=await caches.open("nextstop-tiles-v3");ok("地圖圖磚最多保留 300 筆（實際 "+(await tiles.keys()).length+")",(await tiles.keys()).length===300);
+const tiles=await caches.open("nextstop-tiles-v4");ok("地圖圖磚最多保留 300 筆（實際 "+(await tiles.keys()).length+")",(await tiles.keys()).length===300);
 online=false;r=await fetchEv("https://tiles.openfreemap.org/planet/x/15/1/304.pbf","cors");ok("離線時用快取的圖磚",r&&r.ok);
 online=true;
-store.set("nextstop-shell-v2",new Cache());store.set("nextstop-tiles-v2",new Cache());await run("activate");ok("啟用新版時刪除舊版快取",!(await caches.keys()).some(k=>k.endsWith("-v2")));
+store.set("nextstop-shell-v3",new Cache());store.set("nextstop-tiles-v3",new Cache());await run("activate");ok("啟用新版時刪除舊版快取（含舊圖示）",!(await caches.keys()).some(k=>k.endsWith("-v3")));
 console.log(failed?`\n${failed} 項失敗`:"\n全部通過");
 process.exit(failed?1:0);

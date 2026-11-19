@@ -9,7 +9,7 @@
 - `index.html`：整個看板（HTML、CSS、JS 都在裡面）
 - `sw.js`：service worker；改快取清單或策略時把 `VERSION` 加一
 - `DESIGN.md`：設計系統（token、原則、元件、否決過的方向）；`styleguide.html`：樣式頁，執行時讀 `index.html` 的 CSS 與繪製函式，並排呈現淺深兩色的元件
-- `manifest.webmanifest`、`icon.svg`、`icons/`：PWA。改圖示時用 `sips -s format png -z N N icon.svg --out icons/icon-N.png` 重產 180、192、512 三個尺寸
+- `manifest.webmanifest`、`icon.svg`、`favicon.svg`、`icons/`：PWA（`favicon.svg` 是分頁圖示的簡化版，不由 `icon.svg` 產生）。改圖示時用 `sips -s format png -z N N icon.svg --out icons/icon-N.png` 重產 180、192、512 三個尺寸
 - `tests/`：見〈測試〉
 - `.nojekyll`：讓 GitHub Pages 原樣提供檔案（否則 Jekyll 會把有 YAML 開頭的 `DESIGN.md` 轉成網頁，原網址回 503）
 - `drafts/`：草案與研究紀錄，在 `.gitignore`，不進 repo（`drafts/2026-11-18--visual-research.md` 是視覺定案前的跨領域研究）

@@ -4,7 +4,7 @@
    - 地圖（OpenFreeMap 的樣式、向量圖磚、字型、圖示）：先用快取並在背景更新，最多保留 TILE_MAX 筆，離線時看得到常去區域的地圖。
    - TDX API、token、Google Fonts 一律不攔截，直接走網路，避免拿到過期的到站時間。
    改了這個檔案的快取清單或策略時，把 VERSION 加一，舊快取會在啟用時清掉。 */
-const VERSION = "v3";
+const VERSION = "v4";   /* v4：換新圖示，讓舊的圖示快取清掉 */
 const SHELL = "nextstop-shell-" + VERSION;
 const TILES = "nextstop-tiles-" + VERSION;
 const TILE_MAX = 300;   /* 向量圖磚一張約數十 KB，比點陣圖磚大，上限比照調低 */
@@ -12,7 +12,7 @@ const LIB = [
   "https://unpkg.com/maplibre-gl@5.24.1/dist/maplibre-gl.js",
   "https://unpkg.com/maplibre-gl@5.24.1/dist/maplibre-gl.css"
 ];
-const LOCAL = ["./", "./manifest.webmanifest", "./icon.svg", "./icons/icon-180.png", "./icons/icon-192.png", "./icons/icon-512.png"];
+const LOCAL = ["./", "./manifest.webmanifest", "./icon.svg", "./favicon.svg", "./icons/icon-180.png", "./icons/icon-192.png", "./icons/icon-512.png"];
 
 self.addEventListener("install", ev => {
   ev.waitUntil((async () => {

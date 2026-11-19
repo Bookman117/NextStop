@@ -112,6 +112,9 @@ const TYPE=[["countdown","trip .n","6<small>分</small>",'font:500 52px/.8 var(-
       h+='<div class="sg-sec">字體</div><div class="sg-type">'+TYPE.map(([n,sel,txt,st])=>'<div><code>'+n+'</code><span style="'+st+'">'+txt+"</span></div>").join("")+"</div>";
       h+='<div class="sg-sec">行程卡</div><p class="sg-note">燈條一格＝一分鐘；只有最急的一班用重點色。</p>'+cards.map(([t,c])=>'<div class="sg-note">'+t+"</div>"+c).join("");
       h+='<div class="sg-sec">列表到站牌</div><div class="sg-eta">'+etas.map(([t,b])=>"<figure>"+b+"<figcaption>"+t+"</figcaption></figure>").join("")+"</div>";
+      h+='<div class="sg-sec">狀態列（平常三格；排隊等配額時出現第四格）</div>'+
+        '<div class="ops"><div class="oc"><span class="k">同步</span><span class="v nextbtn">38 秒</span><span class="prog"><i style="width:63%"></i></span></div><div class="oc"><span class="k">更新</span><span class="v">14:43:30</span></div><div class="oc"><span class="k">在線</span><span class="v"><span class="dotlive"></span>2 台</span></div></div>'+
+        '<div class="ops"><div class="oc"><span class="k">同步</span><span class="v">38 秒</span><span class="prog"><i style="width:63%"></i></span></div><div class="oc"><span class="k">更新</span><span class="v">14:43:30</span></div><div class="oc"><span class="k">即時</span><span class="v">2/3 班</span></div><div class="oc oq"><span class="k">配額</span><span class="v">排隊 24 秒</span></div></div>';
       h+='<div class="sg-sec">開始使用（沒有常用時）</div>'+startCard;
       h+='<div class="sg-sec">路線列表與路線條</div><p class="sg-note">選取的站有左側重點色條；車用墨色點，進站中在圓點上、已離站在兩站之間。</p>'+routeList;
       h+='<div class="sg-sec">載入骨架</div>'+skel;

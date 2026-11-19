@@ -424,7 +424,7 @@ test("介面細節：常用標題依分組、最近搜尋、載入骨架、設�
   ok(/^出門的車/.test($f(".bar h1").textContent),"早上的上班組標題："+$f(".bar h1").textContent);
   click('[data-act="hometab"][data-t="home"]');
   ok(/^回家的車/.test($f(".bar h1").textContent),"切到回家組");
-  ok(/^下次 \d+ 秒$|^更新中$/.test($f("#next").textContent),"狀態列倒數："+$f("#next").textContent);
+  ok(/^\d+ 秒$|^更新中$/.test($f("#next").textContent),"狀態列倒數："+$f("#next").textContent);
   /* 最近搜尋：搜過的字會出現，點一下再查一次，可清除 */
   ev('go("search")');$f("#q").value="262";click('[data-act="search"]');
   await until(()=>ev("!S.busy&&S.results"),6000,"搜尋完成");
@@ -517,6 +517,23 @@ test("回饋與入口：收藏有提示可復原；沒有常用時給入口；�
   ok(!$f("#next").disabled,"過 15 秒後可以手動更新");
   const n=calls().length;click("#next");
   await until(()=>calls().length>n,4000,"手動更新送出請求");
+});
+
+test("戰情室狀態列：同步、更新、這個畫面的關鍵數字；配額平常隱藏、排隊時出現；地圖有準星與四角框",async()=>{
+  await boot({storage:CRED});
+  await openRoute("262",0);
+  const ks=$$f(".ops .oc:not([hidden]) .k").map(e=>e.textContent);
+  eq(ks,["同步","更新","在線"],"路線頁三格");
+  eq($f("#ops3").textContent,"2 台","去程上有 2 台車（AAA-001、BBB-002）");
+  ok($f("#opsq").hidden,"配額格平常隱藏");
+  ev("waitUntil=Date.now()+20000");await sleep(1100);
+  ok(!$f("#opsq").hidden&&/排隊 \d+ 秒/.test($f("#wait").textContent),"排隊等配額時出現："+$f("#wait").textContent);
+  ev("waitUntil=0");await sleep(1100);
+  ok($f("#opsq").hidden,"配額恢復後再隱藏");
+  ev('go("home")');await until(()=>ev("S.updated"),6000,"常用載入");
+  eq($$f(".ops .oc .k")[2].textContent,"即時","常用頁第三格是即時班數");
+  await until(()=>ev("mapReady"),25000,"地圖樣式載入");
+  ok($f("#hud .xh")&&$$f("#hud .xc").length===4,"準星與四角框");
 });
 
 test("定位被拒：顯示權限說明",async()=>{
