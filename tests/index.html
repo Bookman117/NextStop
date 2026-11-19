@@ -441,6 +441,24 @@ test("介面細節：常用標題依分組、最近搜尋、載入骨架、設�
   ok($f("#cid").offsetHeight>=40,"設定輸入框不被壓扁："+$f("#cid").offsetHeight);
 });
 
+test("站牌看板：有倒數的前 3 班用行程卡（第一張重點色），沒有倒數的放精簡列表；點了進路線並選這一站",async()=>{
+  await boot({storage:CRED,hash:"#stop/"+encodeURIComponent("中正紀念堂")});
+  await until(()=>ev("S.board"),6000,"站牌看板載入");await sleep(50);
+  const cs=$$f("#main .trips .trip");
+  eq(cs.length,2,"262 與紅30 都有 400 秒的即時倒數");
+  eq(cs.map(c=>c.classList.contains("hot")?1:0).join(""),"10","只有第一張是重點色");
+  eq(cs.map(c=>c.dataset.uid),["S3","S3"],"帶著站牌代碼");
+  eq(cs[0].querySelectorAll(".cells i.on").length,7,"燈條 7 格");
+  eq($$f("#main .list .row").length,0,"沒有剩下的路線");
+  cs[1].click();
+  await until(()=>ev("S.view==='route'&&S.stops"),6000,"進路線");
+  eq(ev("S.pick"),"S3","進路線後選取這一站");
+  await boot({storage:CRED,hash:"#stop/"+encodeURIComponent("東門")});
+  await until(()=>ev("S.board"),6000,"站牌看板載入");await sleep(50);
+  eq($$f("#main .trips .trip").length,0,"末班已過沒有倒數，不做成卡");
+  eq($$f("#main .list .row").length,2,"放在精簡列表");
+});
+
 test("定位被拒：顯示權限說明",async()=>{
   await boot({storage:CRED,geo:"deny"});
   click("#locate");

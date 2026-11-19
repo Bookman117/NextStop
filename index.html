@@ -859,17 +859,36 @@ function vRoute(){
   });
   return h+"</div>";
 }
+/* 站牌看板（2026-11-19 改成行程卡風格）：最快到、有倒數的前 3 班用行程卡（第一張用重點色），其餘路線用精簡列表，
+   避免二三十條路線全做成大卡片太長。點了進路線並選取這一站 */
+const BOARD_CARDS=3;
 function vStop(){
   if(!S.board)return S.err?"":skeleton("載入站牌中");
   if(!S.board.length)return '<div class="empty">這個站牌目前沒有任何路線的到站資料。</div>';
-  let h='<div class="list">';
-  for(const {e,city} of S.board){
-    const info=routeInfo[e.RouteUID],name=zh(e.RouteName);
-    const tw=info?(e.Direction===1?info.dep:info.dest):"";
-    h+='<button class="row" data-act="route" data-city="'+city+'" data-name="'+esc(name)+'" data-dir="'+e.Direction+'">'+etaBox(e)+
-      '<div class="body"><b class="rt"'+rcStyle(name)+'>'+esc(name)+"</b><span>"+(tw?"往 "+esc(tw):(e.Direction===1?"返程":"去程"))+"</span>"+tags(e)+'</div><span aria-hidden="true">›</span></button>';
+  const towards=(e,info)=>info?(e.Direction===1?info.dep:info.dest):"";
+  const attrs=(e,city,name)=>'data-act="route" data-city="'+city+'" data-name="'+esc(name)+'" data-dir="'+e.Direction+'"'+(e.StopUID?' data-uid="'+esc(e.StopUID)+'"':"");
+  const top=S.board.filter(x=>etaMin(x.e)!=null).slice(0,BOARD_CARDS),rest=S.board.filter(x=>!top.includes(x));
+  let h="";
+  if(top.length){
+    h+='<div class="sec">最快到的車</div><div class="trips">';
+    top.forEach(({e,city},i)=>{
+      const info=routeInfo[e.RouteUID],name=zh(e.RouteName),tw=towards(e,info),c=famColor(name);
+      h+=tripCard({tag:"button",cls:"row",e,hot:i===0&&fmt(e).cls!=="sched",attrs:attrs(e,city,name),
+        label:name+(tw?" 往 "+tw:""),
+        head:'<span class="rt"'+(c?' style="color:'+c+'"':"")+'>'+esc(name)+'</span><span class="to">'+(tw?"往 "+esc(tw):(e.Direction===1?"返程":"去程"))+"</span>"});
+    });
+    h+="</div>";
   }
-  return h+"</div>";
+  if(rest.length){
+    h+=(top.length?'<div class="sec">其他路線</div>':"")+'<div class="list">';
+    for(const {e,city} of rest){
+      const info=routeInfo[e.RouteUID],name=zh(e.RouteName),tw=towards(e,info);
+      h+='<button class="row" '+attrs(e,city,name)+'>'+etaBox(e)+
+        '<div class="body"><b class="rt"'+rcStyle(name)+'>'+esc(name)+"</b><span>"+(tw?"往 "+esc(tw):(e.Direction===1?"返程":"去程"))+"</span>"+tags(e)+'</div><span aria-hidden="true">›</span></button>';
+    }
+    h+="</div>";
+  }
+  return h;
 }
 function vSettings(){
   return '<div class="card" id="cf">'+
@@ -1059,7 +1078,11 @@ function initMap(){
   map.on("styleimagemissing",e=>{if(e.id==="dots"&&!map.hasImage("dots"))map.addImage("dots",dotsImage(),{pixelRatio:2})});
   /* 建構時先給一個只有底色的暫時樣式；真正的樣式套上後（styled）才算就緒，避免在換樣式的空檔操作圖層 */
   let styled=false;
-  const foldAttr=()=>{const el=map.getContainer().querySelector(".maplibregl-ctrl-attrib.maplibregl-compact-show");if(el)el.classList.remove("maplibregl-compact-show")};
+  /* 精簡出處：MapLibre 在圖磚來源更新時會自動展開，使用者沒按 ⓘ 之前一律收起 */
+  let attrOpened=false;
+  const foldAttr=()=>{if(attrOpened)return;const el=map.getContainer().querySelector(".maplibregl-ctrl-attrib.maplibregl-compact-show");if(el)el.classList.remove("maplibregl-compact-show")};
+  map.getContainer().addEventListener("click",ev=>{if(ev.target.closest(".maplibregl-ctrl-attrib-button"))attrOpened=true});
+  map.on("sourcedata",()=>setTimeout(foldAttr,0));
   map.on("style.load",()=>{if(!styled)return;addOverlays();mapReady=true;drawMap();setTimeout(foldAttr,0)});
   const apply=async()=>{mapReady=false;const st=await mapStyle();styled=true;map.setStyle(st,{diff:false})};apply();
   DARK.addEventListener("change",()=>{apply();render()});
