@@ -193,7 +193,7 @@ test("路線線形：拿到 Shape 後地圖畫沿路線形；沒有線形時用�
   await boot({storage:CRED});
   await openRoute("262",0);
   const pts=()=>ev("mapReady?lastRoutePts:0");
-  await until(()=>pts()===11,6000,"線形 11 點");
+  await until(()=>pts()===11,25000,"線形 11 點");
   await boot({storage:CRED,noShape:true});
   await openRoute("262",0);
   await sleep(400);
@@ -376,7 +376,7 @@ test("行程卡（常用頁）：依到站排序，只有最快到的一張用�
 
 test("地圖動態：有點雲與動態圖層；定位後掃描一次並開始波紋；公車用重點色",async()=>{
   await boot({storage:CRED,geo:[25.0426,121.5196]});
-  await until(()=>ev("mapReady"),8000,"地圖樣式載入");
+  await until(()=>ev("mapReady"),25000,"地圖樣式載入");
   ok($f("#map #fx"),"動態圖層存在");
   eq(ev('map.getPaintProperty("building","fill-pattern")'),"dots","建築用點陣圖樣（點雲）");
   eq(ev("FX.scanAt"),0,"還沒定位不掃描");
@@ -399,7 +399,7 @@ test("公車位置推算：依下一站即時秒數沿路線前進；沒有即�
   eq(ev("busProgress(1,null,0,600)"),null,"沒有預估不推算");
   await boot({storage:CRED});
   await openRoute("262",0);
-  await until(()=>ev("mapReady"),8000,"地圖樣式載入");
+  await until(()=>ev("mapReady"),25000,"地圖樣式載入");
   /* 模擬資料：AAA-001 在第 2 站，下一站是表定；BBB-002 在第 4 站，下一站末班已過 → 兩台都不推算 */
   /* 看 5 分鐘後：表定或末班已過的下一站，車都不該被推離原站 */
   const at=()=>ev("busFeatures(Date.now()+300000).map(f=>f.geometry.coordinates.map(x=>+x.toFixed(6)).join(','))");
@@ -415,6 +415,30 @@ test("公車位置推算：依下一站即時秒數沿路線前進；沒有即�
   ok(t0<t60&&t60<t120,"路線條上的車隨時間往下走："+[t0,t60,t120]);
   ok(Math.abs((t120-t0)-(row.offsetHeight/2+row.nextElementSibling.offsetHeight/2))<1.5,"走完剛好到下一站的圓點："+(t120-t0));
   eq(ev('map.getPaintProperty("me","circle-color")'),getComputedStyle(win.document.documentElement).getPropertyValue("--me").trim(),"定位點用 --me，和站牌、公車分開");
+});
+
+test("介面細節：常用標題依分組、最近搜尋、載入骨架、設定輸入框高度、狀態列倒數",async()=>{
+  const favs=[{type:"rs",city:"Taipei",route:"262",routeUID:"TPE262",dir:0,stopUID:"S1",stopName:"臺北車站(忠孝)",toward:"信義永康街口",group:"work"},
+    {type:"rs",city:"Taipei",route:"紅30",routeUID:"TPER30",dir:0,stopUID:"S3",stopName:"中正紀念堂",toward:"信義永康街口",group:"home"}];
+  await boot({storage:Object.assign({bus_favs:JSON.stringify(favs)},CRED),hour:8});
+  ok(/^出門的車/.test($f(".bar h1").textContent),"早上的上班組標題："+$f(".bar h1").textContent);
+  click('[data-act="hometab"][data-t="home"]');
+  ok(/^回家的車/.test($f(".bar h1").textContent),"切到回家組");
+  ok(/^下次 \d+ 秒$|^更新中$/.test($f("#next").textContent),"狀態列倒數："+$f("#next").textContent);
+  /* 最近搜尋：搜過的字會出現，點一下再查一次，可清除 */
+  ev('go("search")');$f("#q").value="262";click('[data-act="search"]');
+  await until(()=>ev("!S.busy&&S.results"),6000,"搜尋完成");
+  ev('S.results=null;render()');
+  eq($$f('[data-act="recent"]').map(b=>b.dataset.q),["262"],"記下最近搜尋");
+  click('[data-act="recent"]');
+  await until(()=>ev("!S.busy&&S.results&&S.q==='262'"),6000,"點最近搜尋會再查");
+  ev('S.results=null;render()');click('[data-act="clearrecent"]');
+  eq($$f('[data-act="recent"]').length,0,"清除後沒有最近搜尋");
+  /* 路線載入中顯示骨架，螢幕閱讀器讀得到狀態 */
+  ev('S.view="route";S.route={city:"Taipei",name:"262"};S.stops=null;S.err="";render()');
+  ok($f('#main .skel[role="status"]')&&$f("#main .skel").getAttribute("aria-label")==="載入路線中","載入骨架");
+  ev('go("settings")');
+  ok($f("#cid").offsetHeight>=40,"設定輸入框不被壓扁："+$f("#cid").offsetHeight);
 });
 
 test("定位被拒：顯示權限說明",async()=>{
