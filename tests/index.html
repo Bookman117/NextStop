@@ -417,7 +417,7 @@ test("公車位置推算：依下一站即時秒數沿路線前進；沒有即�
   eq(ev('map.getPaintProperty("me","circle-color")'),getComputedStyle(win.document.documentElement).getPropertyValue("--me").trim(),"定位點用 --me，和站牌、公車分開");
 });
 
-test("介面細節：常用標題依分組、最近搜尋、載入骨架、設定輸入框高度、狀態列倒數",async()=>{
+test("介面細節：常用標題依分組、最近搜尋、載入骨架、設定輸入框高度、狀態列倒數、細捲軸",async()=>{
   const favs=[{type:"rs",city:"Taipei",route:"262",routeUID:"TPE262",dir:0,stopUID:"S1",stopName:"臺北車站(忠孝)",toward:"信義永康街口",group:"work"},
     {type:"rs",city:"Taipei",route:"紅30",routeUID:"TPER30",dir:0,stopUID:"S3",stopName:"中正紀念堂",toward:"信義永康街口",group:"home"}];
   await boot({storage:Object.assign({bus_favs:JSON.stringify(favs)},CRED),hour:8});
@@ -439,6 +439,7 @@ test("介面細節：常用標題依分組、最近搜尋、載入骨架、設�
   ok($f('#main .skel[role="status"]')&&$f("#main .skel").getAttribute("aria-label")==="載入路線中","載入骨架");
   ev('go("settings")');
   ok($f("#cid").offsetHeight>=40,"設定輸入框不被壓扁："+$f("#cid").offsetHeight);
+  eq(getComputedStyle($f("#main")).scrollbarWidth,"thin","面板捲軸用細樣式");
 });
 
 test("站牌看板：有倒數的前 3 班用行程卡（第一張重點色），沒有倒數的放精簡列表；點了進路線並選這一站",async()=>{
@@ -457,6 +458,21 @@ test("站牌看板：有倒數的前 3 班用行程卡（第一張重點色）�
   await until(()=>ev("S.board"),6000,"站牌看板載入");await sleep(50);
   eq($$f("#main .trips .trip").length,0,"末班已過沒有倒數，不做成卡");
   eq($$f("#main .list .row").length,2,"放在精簡列表");
+});
+
+test("等待資料：TDX 配額排隊時顯示等待中，不顯示「無資料」，也不用重點色",async()=>{
+  await boot({storage:CRED,limit:0});   /* 模擬伺服器：每次都回 429，資料永遠回不來 */
+  ev('location.hash="#route/Taipei/262/0"');
+  await until(()=>ev("S.view==='route'&&S.stops===null"),3000,"進路線頁");
+  ev('S.stops={0:{RouteUID:"TPE262",Stops:[{StopUID:"S0",StopName:{Zh_tw:"北門"},pos:[25.0466,121.511]},{StopUID:"S1",StopName:{Zh_tw:"臺北車站(忠孝)"},pos:[25.047,121.516]}]}};S.pick="S0";S.eta={};S.near={};S.updated=null;render()');
+  ok($$f("#main .eta.pend").length===2,"列表兩站都是等待中");
+  ok(!/無資料/.test($f("#main").textContent),"列表沒有「無資料」");
+  const c=$f(".pickline.trip");
+  ok(c.classList.contains("pend")&&!c.classList.contains("hot"),"選取站的卡是等待中、不用重點色");
+  ok(!/無資料/.test(c.textContent),"卡上沒有「無資料」");
+  ev("S.updated=new Date();render()");
+  ok(/無資料/.test($f("#main").textContent),"資料回來後仍沒有的站才寫「無資料」");
+  ok(!$f(".pickline.trip").classList.contains("hot"),"無資料的選取站不用重點色");
 });
 
 test("定位被拒：顯示權限說明",async()=>{

@@ -112,6 +112,9 @@ main{flex:1;padding:12px 16px 96px;display:flex;flex-direction:column;gap:12px}
 .chip{min-height:36px;padding:0 12px;border-radius:18px;border:var(--hair) solid var(--line);background:var(--surface);font-size:14px;font-family:var(--f-mono)}
 .chip.ghost{background:none;border-color:transparent;color:var(--muted);font-family:var(--f-body);font-size:13px}
 .skel .row{min-height:58px}
+.eta.pend .sk-n{flex:none;width:44px;height:22px}
+.trip.pend .n.sk{width:72px;height:40px;border-radius:6px}
+.trip.pend .say{color:var(--muted)}
 .sk{display:block;height:12px;border-radius:3px;background:linear-gradient(90deg,var(--cell) 0,color-mix(in srgb,var(--cell) 40%,var(--surface)) 50%,var(--cell) 100%);background-size:200% 100%;animation:sk 1.4s ease-in-out infinite}
 .sk-n{flex:0 0 44px;height:22px}
 @keyframes sk{from{background-position:100% 0}to{background-position:-100% 0}}
@@ -159,6 +162,12 @@ html,body{overflow:hidden}
 .grip::before{content:"";display:block;width:36px;height:4px;border-radius:2px;background:color-mix(in srgb,var(--muted) 45%,transparent);margin:9px auto 0}
 #app header{position:static;padding-top:0;touch-action:none}
 #app main{overflow:auto;overscroll-behavior:contain;padding-bottom:24px}
+/* 捲軸：細、圓角、軌道透明，顏色跟著深淺色（瀏覽器預設的灰色寬軌和細線風格不搭） */
+#app main,.nomap body{scrollbar-width:thin;scrollbar-color:color-mix(in srgb,var(--muted) 45%,transparent) transparent}
+#app main::-webkit-scrollbar{width:10px}
+#app main::-webkit-scrollbar-track{background:transparent}
+#app main::-webkit-scrollbar-thumb{background:color-mix(in srgb,var(--muted) 45%,transparent);border-radius:10px;border:3px solid transparent;background-clip:padding-box}
+#app main::-webkit-scrollbar-thumb:hover{background-color:color-mix(in srgb,var(--muted) 75%,transparent)}
 /* main 是 flex 直排；子元素預設會縮小，列表又是 overflow:hidden，會被壓扁裁掉。固定不縮，讓 main 自己捲動 */
 #app main>*{flex-shrink:0}
 nav{z-index:20}
@@ -240,7 +249,7 @@ nav{z-index:20}
 .say em{flex:0 0 auto;font:500 10px var(--f-mono);font-style:normal;letter-spacing:1.5px;color:var(--muted)}
 .trip.hot{background:var(--hot-bg);color:var(--hot-ink);border-color:var(--hot-bg)}
 .trip.hot .to,.trip.hot .say em,.trip.hot .n small{color:var(--hot-mu)}
-.trip.hot .n:not(.now){color:var(--hot)}
+.trip.hot .n:not(.now):not(.txt){color:var(--hot)}
 .trip.hot .cells i{background:var(--hot-cell)}.trip.hot .cells i.on{background:var(--hot)}
 .trip.hot .rt{color:inherit!important}
 /* .trip 同時是 .row，蓋掉 .row:first-child 拿掉上框線的規則 */
@@ -416,7 +425,10 @@ const LIVE_ICON='<svg class="live" viewBox="0 0 12 12" aria-hidden="true"><circl
 const etaLabel=f=>f.live?"即時預估：":f.cls==="sched"?"表定推算：":"";
 /* 列表到站牌（2026-11-19 改版，和行程卡同一種語言）：大數字＋小單位、即時訊號小圖示，下方 10 格迷你燈條（一格一分鐘） */
 const miniCells=m=>{const on=m==null?0:Math.min(10,Math.max(0,Math.ceil(m-0.01)));let h='<span class="mc" aria-hidden="true">';for(let i=0;i<10;i++)h+='<i'+(i<on?' class="on"':"")+"></i>";return h+"</span>"};
-const etaBox=e=>{const f=fmt(e),num=typeof f.text==="number";
+/* 這一頁的即時資料還沒回來（剛開頁、排隊等 TDX 配額）：顯示「等待中」，不要說「無資料」 */
+const waiting=e=>!e&&live()&&!S.updated;
+const etaBox=e=>{if(waiting(e))return '<div class="eta pend" role="img" aria-label="等待資料"><span class="sk sk-n"></span></div>';
+  const f=fmt(e),num=typeof f.text==="number";
   const label=etaLabel(f)+f.text+(f.sub==="分"||f.sub==="表定"?" 分鐘":f.sub?"，"+f.sub:"");
   return '<div class="eta '+f.cls+'" role="img" aria-label="'+esc(label)+'"><span class="n">'+esc(f.text)+(f.sub?"<small>"+(f.cls==="soon"?"分":f.sub)+"</small>":"")+"</span>"+(f.live?LIVE_ICON:"")+(num?miniCells(etaMin(e)):"")+"</div>"};
 const rank=e=>{const t=e&&e.EstimateTime;return (t!=null&&t>=0&&(e.StopStatus==null||e.StopStatus<=1))?t:1e9+((e&&e.StopStatus)||9)};
@@ -434,6 +446,11 @@ function tripSay(f,m){
 }
 const cells=m=>{const on=m==null?0:Math.min(10,Math.max(0,Math.ceil(m-0.01)));let h='<span class="cells" aria-hidden="true">';for(let i=0;i<10;i++)h+='<i'+(i<on?' class="on"':"")+"></i>";return h+"<b></b></span>"};
 function tripCard(o){
+  if(waiting(o.e)){
+    const q=waitUntil>Date.now()?"排隊等 TDX 配額，資料馬上回來。":"資料載入中。";
+    return '<'+o.tag+' class="'+o.cls+' trip pend" '+o.attrs+' aria-label="'+esc(o.label+"，"+q)+'"><span class="trip-h"><span>'+o.head+'</span><span class="n sk-n sk" aria-hidden="true"></span></span>'+cells(null)+
+      '<span class="say"><span>'+esc(q)+"</span><em></em></span></"+o.tag+">";
+  }
   const f=fmt(o.e),m=etaMin(o.e),num=typeof f.text==="number",cls=f.cls.split(" ")[0];
   const big=num?'<span class="n'+(cls==="sched"?" sched":"")+'">'+f.text+"<small>分</small></span>":'<span class="n txt'+(cls==="now"?" now":"")+'">'+esc(f.text)+"</span>";
   const badge=[f.live?"LIVE":cls==="sched"?"表定":"",o.e&&o.e.IsLastBus?"末班車":""].filter(Boolean).join(" · ");
@@ -696,7 +713,10 @@ addEventListener("popstate",ev=>{
   if(toHash()!==location.hash)history.replaceState({nextstop:depth},"",toHash());   // 無效網址改正為實際畫面
 });
 function go(view,patch,opt){
+  /* 換到另一個畫面時，上一頁的更新時間不算數，這一頁的資料回來前顯示「等待中」 */
+  const changed=S.view!==view;
   Object.assign(S,{view,err:"",msg:""},patch||{});
+  if(changed&&!(patch&&"updated" in patch))S.updated=null;
   if(!opt||opt.push!==false){
     const h=toHash();
     if(h!==location.hash){depth++;history.pushState({nextstop:depth},"",h)}
@@ -727,7 +747,8 @@ function render(){
     const s=S.stops[S.dir].Stops.find(x=>x.StopUID===S.pick);
     if(s){
       const ss=S.stops[S.dir].Stops,tw=zh(ss[ss.length-1].StopName),e=S.eta[S.dir+"|"+s.StopUID];
-      h+=tripCard({tag:"button",cls:"pickline",hot:true,e,attrs:'data-act="topick" data-uid="'+esc(s.StopUID)+'"',
+      /* 重點色只給有倒數的情況；等待中、無資料、未發車不用重點色 */
+      h+=tripCard({tag:"button",cls:"pickline",hot:etaMin(e)!=null&&fmt(e).cls!=="sched",e,attrs:'data-act="topick" data-uid="'+esc(s.StopUID)+'"',
         label:"捲到 "+zh(s.StopName),head:'<span class="k">選取的站 · 往 '+esc(tw)+'</span><b class="to" style="font-size:17px;color:inherit;font-weight:600">'+esc(zh(s.StopName))+"</b>"});
     }
   }

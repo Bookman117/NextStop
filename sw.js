@@ -4,7 +4,7 @@
    - 地圖（OpenFreeMap 的樣式、向量圖磚、字型、圖示）：先用快取並在背景更新，最多保留 TILE_MAX 筆，離線時看得到常去區域的地圖。
    - TDX API、token、Google Fonts 一律不攔截，直接走網路，避免拿到過期的到站時間。
    改了這個檔案的快取清單或策略時，把 VERSION 加一，舊快取會在啟用時清掉。 */
-const VERSION = "v2";
+const VERSION = "v3";
 const SHELL = "nextstop-shell-" + VERSION;
 const TILES = "nextstop-tiles-" + VERSION;
 const TILE_MAX = 300;   /* 向量圖磚一張約數十 KB，比點陣圖磚大，上限比照調低 */
@@ -35,7 +35,9 @@ self.addEventListener("activate", ev => {
 async function networkFirst(req) {
   const c = await caches.open(SHELL);
   try {
-    const r = await fetch(req);
+    /* GitHub Pages 回 max-age=600：直接 fetch 可能拿到瀏覽器 10 分鐘內的舊頁面。
+       cache:"no-cache" 每次向伺服器確認（沒變時只回 304，很省），剛上線的新版馬上看得到 */
+    const r = await fetch(req, { cache: "no-cache" });
     if (r.ok) c.put("./", r.clone());
     return r;
   } catch (e) {
